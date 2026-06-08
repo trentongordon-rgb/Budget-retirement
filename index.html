@@ -197,16 +197,17 @@ function runVerify(){
   const ctype=(document.getElementById('ctype')||{}).value||'big';
   const ot=document.getElementById('otchk').checked?{t:val('otdays'),dbl:val('otdouble')}:{t:0,dbl:0};
   const base=perCheckBase(d), lic=(ctype==='big'?licenseMonthly(d):0), otp=otPay(d,ot.t,ot.dbl);
-  const expGross=base+lic+otp, elig=base+otp;
-  const tp=S.tradPct, rp=S.rothPct;
-  const gb = val('aGross')>0 ? val('aGross') : expGross;   // employee deferrals = % of gross
   const shRate = parseFloat((document.getElementById('shifttype')||{}).value||0), shHrs = val('shifthrs');
+  const shiftExp = shRate*shHrs;
+  const knownGross = base+lic+otp+shiftExp;   // components the app can derive
+  const expGross=knownGross, elig=base+otp;
+  const tp=S.tradPct, rp=S.rothPct;
+  const gb = val('aGross')>0 ? val('aGross') : knownGross;   // employee deferrals = % of total gross
   const rows=[
     ['Regular base (\u00bd month)',base,null],
     [`License premium ${ctype==='big'?'(full month \u2014 big check)':'(little check \u2014 expect $0)'}`,lic,null],
     ['Overtime'+(ot.t?` (${ot.t-ot.dbl}\u00d71.5\u00d7 + ${ot.dbl}\u00d72\u00d7)`:''),otp,null],
-    [`Shift differential ($${shRate.toFixed(2)}/hr \u00d7 ${shHrs} hr)`, shRate*shHrs, val('aShift')],
-    ['Gross pay (regular portion)',expGross,val('aGross')],
+    [`Shift differential ($${shRate.toFixed(2)}/hr \u00d7 ${shHrs} hr)`, shiftExp, val('aShift')],
     [`401(k) Traditional \u2014 ${(tp*100).toFixed(0)}% of gross`,tp*gb,val('aTrad')],
     [`401(k) Roth \u2014 ${(rp*100).toFixed(0)}% of gross`,rp*gb,val('aRoth')],
     [`HSA (per check)`, (new Date(d).getFullYear()>=S.hsaResumeYear ? S.hsaAnnual/24 : 0), val('aHSA')],
@@ -220,6 +221,14 @@ function runVerify(){
     else if(r[2]===null){ pill=['na','reference']; }
     html+=`<tr><td>${r[0]}</td><td class="num">${fmt(r[1])}</td><td class="num">${(r[2]!==null&&r[2]!==0)?fmt(r[2]):'\u2014'}</td><td><span class="pill ${pill[0]}">${pill[1]}</span></td></tr>`;
   });
+  // Gross reconciliation: extra over known components = holiday/training/straight-OT (rates checked in audit)
+  const ag=val('aGross');
+  if(ag>0){ anyChecked=true; const diff=ag-knownGross; let pill;
+    if(Math.abs(diff)<=Math.max(STEPS_TOLERANCE, ag*0.005)) pill=['ok','\u2713 matches'];
+    else if(diff>0) pill=['ok','\u2713 +'+fmt(diff)+' other earnings'];
+    else { pill=['no','\u2717 short '+fmt(-diff)]; allGood=false; }
+    html+=`<tr><td>Gross pay (base+license+shift+OT)</td><td class="num">${fmt(knownGross)}</td><td class="num">${fmt(ag)}</td><td><span class="pill ${pill[0]}">${pill[1]}</span></td></tr>`;
+  }
   html+=`<tr><td>Employer 9% (6% direct + 3% match)</td><td class="num">${fmt(0.09*elig)}</td><td class="num">\u2014</td><td><span class="pill na">posts to Fidelity, not stub</span></td></tr>`;
   if(window.__loan){ html+=`<tr><td>401(k) loan repayment (on stub)</td><td class="num">\u2014</td><td class="num">${fmt(window.__loan)}</td><td><span class="pill na">info \u2014 existing loan</span></td></tr>`; }
   html+='</table>';
