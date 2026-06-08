@@ -95,17 +95,98 @@ async function idbGet(id){ const db=await idb(); return new Promise((res,rej)=>{
 async function idbDel(id){ const db=await idb(); return new Promise(res=>{ const tx=db.transaction('pdfs','readwrite'); tx.objectStore('pdfs').delete(id); tx.oncomplete=()=>res(); }); }
 async function openPdf(id){ try{ const b=await idbGet(id); if(!b){ alert('That PDF isn\u2019t stored on this device. PDFs are saved per-device when you upload them here.'); return; }
   const u=URL.createObjectURL(b); window.open(u,'_blank'); setTimeout(()=>URL.revokeObjectURL(u),60000); }catch(e){ alert('Could not open PDF: '+e.message); } }
-async function storeAndRecord(file, lines){
+function reviewLast(){ if(window.__lastFile) reviewPdf(window.__lastFile); }
+async function downloadPdf(id,date){ try{ const b=await idbGet(id); if(!b){alert('PDF not on this device.');return;}
+  const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download='paystub-'+(date||'unknown')+'.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),5000); }catch(e){ alert(e.message); } }
+async function exportAllPdfs(){
+  const withPdf=S.history.filter(h=>h.pdfId);
+  if(!withPdf.length){ alert('No stored paystub PDFs yet.'); return; }
+  if(window.showDirectoryPicker){ try{ const dir=await window.showDirectoryPicker();
+      for(const h of withPdf){ const b=await idbGet(h.pdfId); if(!b)continue; const fh=await dir.getFileHandle('paystub-'+h.date+'.pdf',{create:true}); const w=await fh.createWritable(); await w.write(b); await w.close(); }
+      alert('Exported '+withPdf.length+' paystub(s), named by pay date.'); return; }catch(e){ if(e.name==='AbortError')return; }
+  }
+  for(const h of withPdf){ await downloadPdf(h.pdfId,h.date); await new Promise(r=>setTimeout(r,300)); }
+}
+/* ---------- folder sync (desktop Chrome/Edge) ---------- */
+async function connectFolder(){
+  if(!window.showDirectoryPicker){ alert('Folder sync needs desktop Chrome or Edge. On iPhone, use the Save / Export buttons instead.'); return; }
+  try{ const dir=await window.showDirectoryPicker({mode:'read'}); await idbPut('__pdfdir', dir);
+    alert('Folder connected. Tap \u201cImport new from folder\u201d (or just reopen the app) to pull in paystubs.'); importFromFolder(); }
+  catch(e){ if(e.name!=='AbortError') alert(e.message); }
+}
+async function importFromFolder(silent){
+  let dir; try{ dir=await idbGet('__pdfdir'); }catch(e){}
+  if(!dir){ if(!silent) alert('Connect a folder first (button to the right).'); return; }
+  try{ if(dir.queryPermission){ let p=await dir.queryPermission({mode:'read'});
+      if(p!=='granted'){ if(silent) return; p=await dir.requestPermission({mode:'read'}); if(p!=='granted'){ alert('Folder permission denied.'); return; } } }
+    let added=0;
+    for await (const [name,handle] of dir.entries()){
+      if(handle.kind!=='file' || !/\.pdf$/i.test(name)) continue;
+      const file=await handle.getFile(); let lines; try{ lines=await fileToLines(file); }catch(e){ continue; }
+      const r=checkParsed(lines); if(r.date==='?') continue;
+      if(S.history.some(h=>h.date===r.date)) continue;     // already in the queue
+      await storeAndRecord(file, lines, 'new'); added++;
+    }
+    save(); if(tab==='history')render();
+    if(!silent) alert(added?('Imported '+added+' new paystub(s) into the queue.'):'No new paystubs found in the folder.');
+  }catch(e){ if(!silent) alert('Folder import error: '+e.message); }
+}
+/* ---------- shared data file (export / import all numbers) ---------- */
+function exportData(){ const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+  const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download='dispatch-app-data.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),5000); }
+async function importData(ev){ const f=ev.target.files[0]; if(!f)return;
+  try{ const o=JSON.parse(await f.text()); if(!o||typeof o!=='object') throw new Error('not valid');
+    S=Object.assign(structuredClone(DEFAULTS), o); save(); render(); alert('Data imported \u2014 budget, queue and settings updated.'); }
+  catch(e){ alert('Could not read that data file: '+e.message); } }
+/* render the stub and draw red circles around the flagged lines */
+async function reviewPdf(src){
+  let blob = (typeof src==='string') ? await idbGet(src) : src;
+  if(!blob){ alert('PDF not stored on this device.'); return; }
+  if(typeof src==='string'){ const h=S.history.find(x=>x.pdfId===src); if(h&&h.status!=='reviewed'){ h.status='reviewed'; save(); if(tab==='history')render(); } }
+  const buf = await blob.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const pages=[]; let allLines=[];
+  for(let p=1;p<=pdf.numPages;p++){ const page=await pdf.getPage(p); const tc=await page.getTextContent();
+    const rowsby={}; tc.items.forEach(it=>{ const y=Math.round(it.transform[5]); (rowsby[y]=rowsby[y]||[]).push(it); });
+    const lines=[]; Object.keys(rowsby).map(Number).sort((a,b)=>b-a).forEach(y=>{ const its=rowsby[y].sort((a,b)=>a.transform[4]-b.transform[4]);
+      const text=its.map(x=>x.str).join(' ').replace(/\s+/g,' ').trim(); if(!text)return;
+      const x0=Math.min(...its.map(i=>i.transform[4])); const last=its[its.length-1]; const x1=last.transform[4]+(last.width||30);
+      lines.push({text,y,x0,x1}); allLines.push(text); });
+    pages.push({page,lines}); }
+  const r=checkParsed(allLines); const flags=[];
+  (r.issues||[]).forEach(is=>{ if(/base off/.test(is))flags.push({re:/^Regular Pay/i,reason:'Base pay doesn\u2019t match your step rate'});
+    else if(/license off/.test(is))flags.push({re:/Dispatcher License Pay/i,reason:'License premium is off'});
+    else if(/net mismatch/.test(is))flags.push({re:/Net Pay/i,reason:'Net pay doesn\u2019t reconcile'});
+    else if(/ rate$/.test(is)){ const l=is.replace(/ rate$/,''); flags.push({re:new RegExp('^'+l.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'),reason:l+': wrong hourly rate'}); } });
+  // overlay
+  let m=document.getElementById('pdfmodal'); if(m)m.remove();
+  m=document.createElement('div'); m.id='pdfmodal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.92);z-index:9999;overflow:auto;padding:14px;-webkit-overflow-scrolling:touch';
+  const issuesHtml = flags.length ? '<b style="color:#fda4af">Issues circled below:</b><ul style="margin:6px 0 0;padding-left:18px">'+flags.map(f=>'<li>'+f.reason+'</li>').join('')+'</ul>'
+    : '<b style="color:#86efac">\u2713 No discrepancies detected on this stub.</b>';
+  m.innerHTML='<div style="max-width:760px;margin:0 auto;color:#fff"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px"><div><div style="font-size:18px;font-weight:700">Single paystub review \u2014 '+(r.date||'')+'</div><div style="font-size:13px;margin-top:4px">'+issuesHtml+'</div></div><button onclick="document.getElementById(\'pdfmodal\').remove()" style="background:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700">Close</button></div><div id="pdfpages"></div></div>';
+  document.body.appendChild(m);
+  const host=m.querySelector('#pdfpages'); const scale=Math.min(2, (Math.min(720,window.innerWidth-28))/ (pages[0].page.getViewport({scale:1}).width));
+  for(const pg of pages){ const vp=pg.page.getViewport({scale}); const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+    cv.style.cssText='width:100%;height:auto;background:#fff;border-radius:8px;margin-bottom:12px;display:block'; host.appendChild(cv);
+    const ctx=cv.getContext('2d'); await pg.page.render({canvasContext:ctx,viewport:vp}).promise;
+    ctx.strokeStyle='#e11d48'; ctx.lineWidth=3;
+    pg.lines.forEach(ln=>{ if(flags.some(f=>f.re.test(ln.text))){ const a=vp.convertToViewportPoint(ln.x0,ln.y), b=vp.convertToViewportPoint(ln.x1,ln.y);
+      const cx=(a[0]+b[0])/2, cy=a[1]-4, rx=Math.abs(b[0]-a[0])/2+14, ry=13;
+      ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,2*Math.PI); ctx.stroke(); } }); }
+}
+async function storeAndRecord(file, lines, status){
   const r=checkParsed(lines); if(r.date==='?') return r;
   const blob=lines.join('\n');
   const defs=[...blob.matchAll(/401\(k\) Deferral\s+([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,'')));
   const hsaM=blob.match(/Health Savings Account[^\n]*?(\d[\d,]*\.\d{2})/);
   const id='pdf-'+r.date;
   try{ if(file) await idbPut(id, file); }catch(e){}
+  const prior=S.history.find(h=>h.date===r.date);
   S.history = S.history.filter(h=>h.date!==r.date);   // upsert by pay-end date
   S.history.unshift({date:r.date, type:r.type, gross:r.gross, net:r.net,
     trad:defs[0]||0, roth:defs[1]||0, hsa:hsaM?parseFloat(hsaM[1].replace(/,/g,'')):0, mega:0,
-    ok:r.ok, issues:r.issues, pdfId:file?id:null});
+    ok:r.ok, issues:r.issues, pdfId:file?id:null, status: status || (prior&&prior.status==='reviewed'?'reviewed':'new')});
   save(); return r;
 }
 
@@ -151,7 +232,7 @@ function expectedBalance(asOf){
 function projAtRetire(){ return expectedBalance(new Date(retireYear(),11,31).toISOString().slice(0,10)); }
 
 /* ---------- UI framework ---------- */
-const TABS=[['verify','Paycheck'],['track','On Track'],['budget','Budget'],['history','History'],['settings','Settings']];
+const TABS=[['verify','Paycheck'],['track','On Track'],['budget','Budget'],['history','Queue'],['settings','Settings']];
 let tab='verify';
 function render(){
   document.getElementById('nav').innerHTML = TABS.map(t=>`<button class="${t[0]===tab?'active':''}" onclick="go('${t[0]}')">${t[1]}</button>`).join('');
@@ -270,10 +351,13 @@ function runVerify(){
   // net reconciliation from parsed summary
   const sm=window.__summary;
   if(sm){ const recon=sm.gross-sm.taxes-sm.ded; const ok=Math.abs(recon-sm.net)<0.02; if(!ok)allGood=false;
-    html+=`<h2 style="margin-top:14px">Net reconciliation</h2><table><tr><td>Gross \u2212 taxes \u2212 deductions</td><td class="num">${fmt(recon)}</td><td>vs net ${fmt(sm.net)}</td><td><span class="pill ${ok?'ok':'no'}">${ok?'\u2713 ties out':'\u2717 mismatch'}</span></td></tr></table>`; }
+    html+=`<h2 style="margin-top:14px">Net reconciliation</h2><table><tr><td>Gross \u2212 taxes \u2212 deductions</td><td class="num">${fmt(recon)}</td><td>vs net ${fmt(sm.net)}</td><td><span class="pill ${ok?'ok':'no'}">${ok?'\u2713 ties out':'\u2717 mismatch'}</span></td></tr></table>
+    <p class="hint" style="margin-top:6px">This checks the stub\u2019s bottom line: your <b>gross pay minus all taxes minus all deductions</b> should equal your <b>net (take-home)</b>. When it ties out, the paystub is internally consistent \u2014 the take-home matches the stub\u2019s own math. A mismatch means a number on the stub is mislabeled or miscalculated.</p>`; }
   const verdict = !anyChecked ? ['na','Upload or enter your paystub figures to verify']
     : allGood ? ['ok','\u2713  Paycheck verified \u2014 pay, rate & contributions match the contract'] : ['no','\u2717  Discrepancy found \u2014 see red lines. Document it for your shop steward.'];
-  html=`<div class="statusbig ${verdict[0]==='ok'?'ok':verdict[0]==='no'?'no':'na'}" style="margin-bottom:12px"><span class="big">${verdict[0]==='ok'?'\u2713':verdict[0]==='no'?'\u2717':'\u2139'}</span><span>${verdict[1]}</span></div>`+html;
+  let vhtml=`<div class="statusbig ${verdict[0]==='ok'?'ok':verdict[0]==='no'?'no':'na'}" style="margin-bottom:12px"><span class="big">${verdict[0]==='ok'?'\u2713':verdict[0]==='no'?'\u2717':'\u2139'}</span><span>${verdict[1]}</span></div>`;
+  if(window.__lastFile){ vhtml+=`<button class="act" style="margin:0 0 12px" onclick="reviewLast()">\ud83d\udd0d Review on the PDF${verdict[0]==='no'?' \u2014 circle what\u2019s wrong':''}</button>`; }
+  html=vhtml+html;
   html+=`<p class="muted">Eligible basis (excl. license/longevity, per addendum): ${fmt(elig)}. Set your Traditional/Roth election % in Settings. Employer money and Roth IRA pacing are checked on the On Track tab.</p></div>`;
   document.getElementById('vresult').innerHTML=html;
   const net=val('aNet'); if(net>0){ if(ctype==='big')S.bigNet=net; else S.littleNet=net; save(); }
@@ -292,8 +376,8 @@ async function fileToLines(file){
 async function parsePaystub(ev){
   const f=ev.target.files[0]; if(!f) return; const st=document.getElementById('parsestatus');
   st.textContent='Parsing\u2026';
-  try{ const lines=await fileToLines(f); fillFromLines(lines); runVerify();
-    const r=await storeAndRecord(f, lines);
+  try{ const lines=await fileToLines(f); window.__lastFile=f; fillFromLines(lines); runVerify();
+    const r=await storeAndRecord(f, lines, 'reviewed');
     st.textContent = r.date==='?' ? '\u2713 Parsed \u2014 review and Verify (couldn\u2019t read pay date, so not auto-saved).'
       : '\u2713 Parsed, verified & saved to History \u2014 PDF stored on this device ('+r.date+').';
   }
@@ -331,13 +415,14 @@ function fillFromLines(lines){
 async function batchVerify(ev){
   const files=[...ev.target.files]; if(!files.length) return; const out=document.getElementById('batchresult');
   out.innerHTML='Parsing '+files.length+' file(s)\u2026'; const results=[];
-  for(const f of files){ try{ const lines=await fileToLines(f); results.push(checkParsed(lines)); await storeAndRecord(f, lines); }
+  for(const f of files){ try{ const lines=await fileToLines(f); results.push(checkParsed(lines)); await storeAndRecord(f, lines, 'new'); }
     catch(e){ results.push({date:f.name,type:'?',gross:0,net:0,ok:false,issues:['parse failed']}); } }
   results.sort((a,b)=>a.date>b.date?1:-1);
   let h='<table><tr><th>Pay end</th><th>Type</th><th class="num">Gross</th><th class="num">Net</th><th>Result</th></tr>';
-  let pass=0; results.forEach(r=>{ if(r.ok)pass++; h+=`<tr><td>${r.date}</td><td>${r.type}</td><td class="num">${fmt(r.gross)}</td><td class="num">${fmt(r.net)}</td><td><span class="pill ${r.ok?'ok':'no'}">${r.ok?'\u2713 pass':'\u2717 '+r.issues.join('; ')}</span></td></tr>`; });
+  let pass=0; results.forEach(r=>{ if(r.ok)pass++; const clk=r.date&&r.date!=='?'?`style="cursor:pointer" onclick="reviewPdf('pdf-${r.date}')" title="Open single review"`:'';
+    h+=`<tr ${clk}><td>${r.date}</td><td>${r.type}</td><td class="num">${fmt(r.gross)}</td><td class="num">${fmt(r.net)}</td><td><span class="pill ${r.ok?'ok':'no'}">${r.ok?'\u2713 pass':'\u2717 '+r.issues.join('; ')}</span></td></tr>`; });
   const sumNet=results.reduce((s,r)=>s+r.net,0);
-  h+=`</table><p class="muted">${pass}/${results.length} passed. Combined net across these checks: ${fmt(sumNet)}.</p>`;
+  h+=`</table><p class="muted">${pass}/${results.length} passed \u00b7 tap any row to open its single review with the PDF circled. Combined net: ${fmt(sumNet)}. All saved to the Queue as <b>New</b>.</p>`;
   out.innerHTML=h;
 }
 function checkParsed(lines){
@@ -489,11 +574,18 @@ function jhanNet(v){S.jhanNetMonthly=parseFloat(v)||0;save();render();}
 
 /* ---------- HISTORY ---------- */
 function vHistory(){
-  if(!S.history.length) return '<div class="card"><h2>History</h2><p class="muted">No saved paychecks yet. Upload a paystub PDF on the Paycheck tab \u2014 it auto-saves here with the file.</p></div>';
-  let rows=S.history.map((h,i)=>`<tr><td>${h.date}</td><td>${h.type||'\u2014'}</td><td class="num">${fmt(h.gross)}</td><td class="num">${fmt(h.net)}</td><td class="num">${fmt(h.trad)}</td><td class="num">${fmt(h.roth)}</td><td>${h.ok===true?'<span class="pill ok">\u2713</span>':h.ok===false?'<span class="pill no">\u2717</span>':''}</td><td>${h.pdfId?`<button class="act ghost" style="padding:3px 8px" onclick="openPdf('${h.pdfId}')">PDF</button>`:'\u2014'}</td><td><button class="act ghost" style="padding:3px 8px" onclick="histDel(${i})">\u2715</button></td></tr>`).join('');
-  return `<div class="card"><h2>Saved paychecks</h2><table><tr><th>Date</th><th>Type</th><th class="num">Gross</th><th class="num">Net</th><th class="num">Trad</th><th class="num">Roth</th><th>Result</th><th>PDF</th><th></th></tr>${rows}</table>
-  <p class="muted" style="margin-top:8px">Tap <b>PDF</b> to reopen the stored paystub. Files are kept in this browser on this device.</p></div>`;
+  const newCount=S.history.filter(h=>h.status!=='reviewed').length;
+  const top=`<div class="card"><h2>Queue${newCount?` <span class="pill no" style="font-size:12px">${newCount} New</span>`:''}</h2>
+    <p class="muted">Paychecks land here automatically. Batch uploads and folder imports arrive as <b>New</b>; opening one to review (or importing a single) marks it <b>Reviewed</b>.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="act ghost" onclick="importFromFolder()">Import new from folder</button><button class="act ghost" onclick="connectFolder()">Connect PDF folder</button></div></div>`;
+  if(!S.history.length) return top+'<div class="card"><p class="muted">No paychecks yet. Upload one on the Paycheck tab, drop several in Batch, or connect your PDF folder above.</p></div>';
+  let rows=S.history.map((h,i)=>{ const isNew=h.status!=='reviewed';
+    return `<tr style="${isNew?'background:rgba(225,29,72,.06)':''}"><td>${h.date}</td><td>${h.type||'\u2014'}</td><td class="num">${fmt(h.gross)}</td><td class="num">${fmt(h.net)}</td><td>${h.ok===true?'<span class="pill ok">\u2713</span>':h.ok===false?'<span class="pill no">\u2717</span>':''}</td><td><span class="pill ${isNew?'no':'ok'}">${isNew?'New':'Reviewed'}</span></td><td>${h.pdfId?`<button class="act ghost" style="padding:3px 6px" onclick="reviewPdf('${h.pdfId}')">View</button> <button class="act ghost" style="padding:3px 6px" onclick="downloadPdf('${h.pdfId}','${h.date}')">Save</button>`:'\u2014'}</td><td>${isNew?`<button class="act ghost" style="padding:3px 6px" onclick="markReviewed(${i})">\u2713</button> `:''}<button class="act ghost" style="padding:3px 8px" onclick="histDel(${i})">\u2715</button></td></tr>`; }).join('');
+  return top+`<div class="card"><table><tr><th>Date</th><th>Type</th><th class="num">Gross</th><th class="num">Net</th><th>Check</th><th>Status</th><th>PDF</th><th></th></tr>${rows}</table>
+  <p class="muted" style="margin-top:8px"><b>View</b> opens the single review with problems circled (and marks it Reviewed). <b>Save</b> downloads it named <code>paystub-(pay date).pdf</code>.</p>
+  <button class="act ghost" style="margin-top:6px" onclick="exportAllPdfs()">Export all paystubs to a folder</button></div>`;
 }
+function markReviewed(i){ if(S.history[i]){ S.history[i].status='reviewed'; save(); render(); } }
 function histDel(i){ const h=S.history[i]; if(h&&h.pdfId)idbDel(h.pdfId); S.history.splice(i,1);save();render(); }
 
 /* ---------- SETTINGS ---------- */
@@ -512,8 +604,11 @@ function vSettings(){
     <div><label>401(k) Traditional election %</label><input type="number" step="0.01" id="s_trad" value="${S.tradPct}"><div class="hint">e.g. 0.06 = 6%</div></div>
     <div><label>401(k) Roth election %</label><input type="number" step="0.01" id="s_roth" value="${S.rothPct}"><div class="hint">e.g. 0.11 = 11% (0 if not enrolled)</div></div>
   </div>
-  <div class="row" style="margin-top:12px;gap:8px"><button class="act" onclick="saveSettings()">Save settings</button>
+  <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap"><button class="act" onclick="saveSettings()">Save settings</button>
+  <button class="act ghost" onclick="exportData()">Export data file</button>
+  <label class="act ghost" style="cursor:pointer">Import data file<input type="file" accept="application/json,.json" onchange="importData(event)" style="display:none"></label>
   <button class="act ghost" onclick="if(confirm('Erase all saved data in this browser?')){localStorage.removeItem('dispatchPay');S=load();render();}">Reset all data</button></div>
+  <p class="muted" style="margin-top:10px">Shared data (for now): tap <b>Export data file</b>, save it into a synced folder (iCloud Drive, Google Drive, Dropbox). On the other person\u2019s device, open the app and <b>Import data file</b>. PDFs sync via the <b>Connect PDF folder</b> button on the Queue tab if that folder is in the same synced location.</p>
   <p class="muted" style="margin-top:10px">To update the pay chart after a new contract: edit the CHART object at the top of index.html and add a new effective-date column.</p>
   </div>`;
 }
@@ -531,6 +626,7 @@ function saveSettings(){
 const _origRender=render;
 render=function(){ _origRender(); if(tab==='track') renderPace(); };
 render();
+try{ importFromFolder(true); }catch(e){}
 </script>
 </body>
 </html>
