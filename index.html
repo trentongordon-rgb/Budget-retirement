@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Dispatcher Pay & Plan Verifier</title>
+<style>
+  :root{--navy:#1f3864;--accent:#2e75b6;--good:#1e7e34;--goodbg:#e2efda;--bad:#b02a37;--badbg:#fdecea;--warn:#9a6b00;--warnbg:#fff3cd;--line:#d9dee6;--bg:#f4f6f9;--ink:#1c2530;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
+  header{background:var(--navy);color:#fff;padding:14px 18px}
+  header h1{margin:0;font-size:18px}
+  header p{margin:3px 0 0;font-size:12px;color:#c7d3e8}
+  nav{display:flex;flex-wrap:wrap;gap:4px;background:#fff;border-bottom:1px solid var(--line);padding:6px 10px;position:sticky;top:0;z-index:5}
+  nav button{border:1px solid var(--line);background:#fff;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--navy)}
+  nav button.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+  main{max-width:920px;margin:0 auto;padding:16px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 10px;font-size:16px;color:var(--navy)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+  @media(max-width:640px){.grid{grid-template-columns:1fr}}
+  label{display:block;font-size:12px;font-weight:600;color:#52606d;margin-bottom:3px}
+  input,select{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+  .row{display:flex;align-items:center;gap:8px}
+  .chk{display:flex;align-items:center;gap:8px;margin:6px 0}
+  .chk input{width:auto}
+  button.act{background:var(--accent);color:#fff;border:none;padding:10px 16px;border-radius:9px;font-weight:700;cursor:pointer;font-size:14px}
+  button.ghost{background:#eef2f7;color:var(--navy);border:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{background:#f0f3f8;color:var(--navy);font-size:12px}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:700}
+  .ok{background:var(--goodbg);color:var(--good)} .no{background:var(--badbg);color:var(--bad)} .na{background:#eceff3;color:#67727e}
+  .big{font-size:30px;font-weight:800;letter-spacing:-.5px}
+  .muted{color:#67727e;font-size:12px}
+  .banner{font-size:12px;background:var(--warnbg);color:var(--warn);border:1px solid #f0e0a8;border-radius:9px;padding:8px 10px;margin-bottom:12px}
+  .statusbig{display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;font-weight:700}
+  .hint{font-size:11px;color:#8a94a0;margin-top:2px}
+  .ot-box{border:1px dashed var(--accent);border-radius:9px;padding:10px;margin-top:6px;display:none}
+  .ot-box.show{display:block}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>Dispatcher Pay &amp; Plan Verifier</h1>
+  <p>Domestic Flight Dispatcher (PAFCA) &middot; Private &middot; all data stays in this browser</p>
+</header>
+<nav id="nav"></nav>
+<main id="main"></main>
+
+<script>
+/* ---------- contract data (PAFCA 2022-2024 Agreement, Section 13) ---------- */
+const CHART = { // monthly base salary by step, by effective-date column
+  '2022':[7161,7711,8073,8587,8999,9228,9704,10038,10803,11176,12536],
+  '2023':[7412,7981,8356,8888,9314,9551,10044,10389,11181,11567,12975],
+  '2024':[7671,8260,8648,9199,9640,9885,10395,10753,11572,11972,13429]
+};
+const HRS_YEAR = 1880;            // base*12/1880 reproduces the contract $55.20 Step-2 hourly
+const LICENSE_FLAT = 370, LICENSE_VAR = 0.045;
+const PAY_PERIODS = 24;           // semi-monthly
+const STEPS_TOLERANCE = 1.50;     // $ tolerance for a "pass"
+
+/* ---------- defaults / state ---------- */
+const DEFAULTS = {
+  hireDate:'2023-10-15',
+  startBalance:180000, startBalanceDate:'2026-06-01', annualReturn:0.07,
+  jhanNetMonthly:0, jhanInvestAnnual:0,
+  rothIRAannual:7000, hsaResumeYear:2026, hsaAnnual:7250, megaAnnualTarget:0,
+  tradPct:0.06, rothPct:0.00,
+  budget:[
+    ['Housing (full stack)',2727.80],['Car loan',363],['Student loans',333],['Personal loan (attack)',977],
+    ['Groceries',650],['Gas (2 vehicles)',200],['Utilities',180],['Water/sewer',45],['Internet',75],
+    ['Cell phones',130],['Streaming',45],['Dining out',250],['Entertainment',100],['Clothing',100],
+    ['Personal care',65],['Medical copays',55],['Misc subscriptions',60],['Gifts (amortized)',80],
+    ['Emergency fund build',500],['Roth IRA \u2013 Trenton',334]
+  ],
+  history:[], bigNet:0, littleNet:0
+};
+let S = load();
+function load(){ try{ return Object.assign(structuredClone(DEFAULTS), JSON.parse(localStorage.getItem('dispatchPay')||'{}')); }catch(e){ return structuredClone(DEFAULTS);} }
+function save(){ localStorage.setItem('dispatchPay', JSON.stringify(S)); }
+
+/* ---------- pay math ---------- */
+const fmt = n => (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmt0 = n => '$'+Math.round(n).toLocaleString('en-US');
+function annivCount(hire, asOf){ // completed years since hire (anniversary each year)
+  const h=new Date(hire), d=new Date(asOf); let y=d.getFullYear()-h.getFullYear();
+  const annThisYear=new Date(d.getFullYear(), h.getMonth(), h.getDate());
+  if(d<annThisYear) y--; return Math.max(0,y);
+}
+function stepFor(asOf){ return Math.min(10, annivCount(S.hireDate, asOf)); }
+function rateCol(asOf){ const d=new Date(asOf); if(d<new Date('2023-12-01'))return '2022'; if(d<new Date('2024-12-01'))return '2023'; return '2024'; }
+function monthlyBase(asOf){ return CHART[rateCol(asOf)][stepFor(asOf)]; }
+function hourly(asOf){ return monthlyBase(asOf)*12/HRS_YEAR; }
+function licenseMonthly(asOf){ return LICENSE_FLAT + LICENSE_VAR*monthlyBase(asOf); }
+function perCheckBase(asOf){ return monthlyBase(asOf)/2; }
+function perCheckLicense(asOf){ return licenseMonthly(asOf)/2; }
+function otPay(asOf, totalDays, doubleDays){
+  const hr=hourly(asOf); const d15=Math.max(0,totalDays-doubleDays);
+  return d15*8*hr*1.5 + doubleDays*8*hr*2;
+}
+
+/* ---------- projection (mirrors planning model) ---------- */
+function salaryYr(y){ const step=Math.min(2+(y-2026),10); return CHART['2024'][step]*Math.pow(1.035,Math.max(0,y-2024))*12; }
+function annualContrib(y){
+  const sal=salaryYr(y), age=36+(y-2026);
+  const emp=Math.min((S.tradPct+S.rothPct)*sal, 24500+(age>=50?8000:0));
+  const er=0.09*sal, rothT=S.rothIRAannual;
+  const rothJ=(S.jhanNetMonthly>0 && y>=2028)?S.rothIRAannual:0;
+  const hsa=(y>=S.hsaResumeYear?S.hsaAnnual:0);
+  return emp+er+rothT+rothJ+hsa+S.jhanInvestAnnual;
+}
+function expectedBalance(asOf){
+  const start=new Date(S.startBalanceDate), end=new Date(asOf); let bal=S.startBalance;
+  const rM=Math.pow(1+S.annualReturn,1/12)-1;
+  let cur=new Date(start.getFullYear(),start.getMonth(),1);
+  while(cur<end){ const y=cur.getFullYear(); bal=bal*(1+rM)+annualContrib(y)/12; cur.setMonth(cur.getMonth()+1); }
+  return bal;
+}
+
+/* ---------- UI framework ---------- */
+const TABS=[['verify','Paycheck'],['track','On Track'],['budget','Budget'],['history','History'],['settings','Settings']];
+let tab='verify';
+function render(){
+  document.getElementById('nav').innerHTML = TABS.map(t=>`<button class="${t[0]===tab?'active':''}" onclick="go('${t[0]}')">${t[1]}</button>`).join('');
+  document.getElementById('main').innerHTML = ({verify:vVerify,track:vTrack,budget:vBudget,history:vHistory,settings:vSettings})[tab]();
+  if(tab==='verify') wireVerify();
+}
+function go(t){ tab=t; render(); }
+
+/* ---------- PAYCHECK VERIFIER ---------- */
+function vVerify(){
+  const today=new Date().toISOString().slice(0,10);
+  return `
+  <div class="banner">Rates load automatically from your contract by check date. The 12/1/2024 column is the latest in the 2022\u20132024 agreement \u2014 update Settings when a new contract is ratified.</div>
+  <div class="card" style="border-color:var(--accent)">
+    <h2>Upload paystub PDF (auto-fill)</h2>
+    <input type="file" id="pdffile" accept="application/pdf" onchange="parsePaystub(event)">
+    <div id="parsestatus" class="hint" style="margin-top:6px">Pick your United advice PDF \u2014 it parses in your browser and fills the fields below. Nothing is uploaded.</div>
+  </div>
+  <div class="card">
+    <h2>Enter paycheck</h2>
+    <div class="grid">
+      <div><label>Check date</label><input type="date" id="cdate" value="${today}"></div>
+      <div><label>Check type</label><select id="ctype"><option value="big">Big check (base + monthly license + premiums)</option><option value="little">Little check (base only)</option></select></div>
+      <div style="grid-column:1/-1"><label>Auto step / rate</label><input id="autostep" disabled></div>
+    </div>
+    <div class="chk"><input type="checkbox" id="otchk"><label style="margin:0">Overtime worked (1.5\u00d7)</label></div>
+    <div class="ot-box" id="otbox">
+      <div class="grid">
+        <div><label>Total OT days (8 hr each)</label><input type="number" id="otdays" min="0" step="1" value="0"></div>
+        <div><label>Of those, days at 2\u00d7 (consecutive)</label><input type="number" id="otdouble" min="0" step="1" value="0"><div class="hint">First day 1.5\u00d7; each consecutive day after = 2\u00d7</div></div>
+      </div>
+    </div>
+    <h2 style="margin-top:14px">Paystub figures (what it actually shows)</h2>
+    <div class="grid">
+      <div><label>Gross pay this check</label><input type="number" id="aGross" step="0.01" placeholder="0.00"></div>
+      <div><label>Net pay this check</label><input type="number" id="aNet" step="0.01" placeholder="0.00"></div>
+      <div><label>401(k) Traditional (6%)</label><input type="number" id="aTrad" step="0.01" placeholder="0.00"></div>
+      <div><label>401(k) Roth (if enrolled)</label><input type="number" id="aRoth" step="0.01" placeholder="0.00"></div>
+      <div><label>HSA</label><input type="number" id="aHSA" step="0.01" placeholder="0.00"></div>
+      <div><label>Post-tax / Mega Backdoor</label><input type="number" id="aMega" step="0.01" placeholder="0.00"></div>
+    </div>
+    <div class="row" style="margin-top:12px;gap:8px">
+      <button class="act" onclick="runVerify()">Verify</button>
+      <button class="act ghost" onclick="saveCheck()">Save to history</button>
+    </div>
+  </div>
+  <div id="vresult"></div>`;
+}
+function wireVerify(){
+  const upd=()=>{ const d=document.getElementById('cdate').value; const st=stepFor(d), col=rateCol(d);
+    document.getElementById('autostep').value=`Step ${st} \u00b7 ${col} rates \u00b7 ${fmt0(monthlyBase(d))}/mo \u00b7 ${fmt(hourly(d))}/hr`; };
+  document.getElementById('cdate').addEventListener('change',upd); upd();
+  document.getElementById('otchk').addEventListener('change',e=>document.getElementById('otbox').classList.toggle('show',e.target.checked));
+}
+const val=id=>parseFloat(document.getElementById(id).value)||0;
+function statusPill(exp,act){ if(act===0&&exp!==0) return ['na','\u2013 not entered']; const ok=Math.abs(exp-act)<=Math.max(STEPS_TOLERANCE, exp*0.005); return ok?['ok','\u2713 matches']:['no','\u2717 off by '+fmt(act-exp)]; }
+function runVerify(){
+  const d=document.getElementById('cdate').value;
+  const ctype=(document.getElementById('ctype')||{}).value||'big';
+  const ot=document.getElementById('otchk').checked?{t:val('otdays'),dbl:val('otdouble')}:{t:0,dbl:0};
+  const base=perCheckBase(d), lic=(ctype==='big'?licenseMonthly(d):0), otp=otPay(d,ot.t,ot.dbl);
+  const expGross=base+lic+otp, elig=base+otp;
+  const tp=S.tradPct, rp=S.rothPct;
+  const gb = val('aGross')>0 ? val('aGross') : expGross;   // employee deferrals = % of gross
+  const rows=[
+    ['Regular base (\u00bd month)',base,null],
+    [`License premium ${ctype==='big'?'(full month \u2014 big check)':'(little check \u2014 expect $0)'}`,lic,null],
+    ['Overtime'+(ot.t?` (${ot.t-ot.dbl}\u00d71.5\u00d7 + ${ot.dbl}\u00d72\u00d7)`:''),otp,null],
+    ['Gross pay (regular portion)',expGross,val('aGross')],
+    [`401(k) Traditional \u2014 ${(tp*100).toFixed(0)}% of gross`,tp*gb,val('aTrad')],
+    [`401(k) Roth \u2014 ${(rp*100).toFixed(0)}% of gross`,rp*gb,val('aRoth')],
+    [`HSA (per check)`, (new Date(d).getFullYear()>=S.hsaResumeYear ? S.hsaAnnual/24 : 0), val('aHSA')],
+  ];
+  let html='<div class="card"><h2>Verification</h2><table><tr><th>Line</th><th class="num">Expected</th><th class="num">Your paystub</th><th>Status</th></tr>';
+  let allGood=true, anyChecked=false;
+  rows.forEach(r=>{
+    const hasActual = r[2]!==null && !(r[3]===false);
+    let pill=['na','\u2013'];
+    if(hasActual && r[2]!==0){ anyChecked=true; const p=statusPill(r[1],r[2]); pill=p; if(p[0]==='no')allGood=false; }
+    else if(r[2]===null){ pill=['na','reference']; }
+    html+=`<tr><td>${r[0]}</td><td class="num">${fmt(r[1])}</td><td class="num">${(r[2]!==null&&r[2]!==0)?fmt(r[2]):'\u2014'}</td><td><span class="pill ${pill[0]}">${pill[1]}</span></td></tr>`;
+  });
+  html+=`<tr><td>Employer 9% (6% direct + 3% match)</td><td class="num">${fmt(0.09*elig)}</td><td class="num">\u2014</td><td><span class="pill na">posts to Fidelity, not stub</span></td></tr>`;
+  if(window.__loan){ html+=`<tr><td>401(k) loan repayment (on stub)</td><td class="num">\u2014</td><td class="num">${fmt(window.__loan)}</td><td><span class="pill na">info \u2014 existing loan</span></td></tr>`; }
+  html+='</table>';
+  // rate audit from parsed PDF
+  const rated=window.__rated||[]; const hr=hourly(d);
+  if(rated.length){
+    html+='<h2 style="margin-top:14px">Hourly-rate audit</h2><table><tr><th>Earnings line</th><th class="num">Rate paid</th><th class="num">Step rate</th><th>Status</th></tr>';
+    rated.forEach(rl=>{ if(rl.rate>10){ const ok=Math.abs(rl.rate-hr)<0.02; if(!ok)allGood=false;
+      html+=`<tr><td>${rl.label}</td><td class="num">${fmt(rl.rate)}</td><td class="num">${fmt(hr)}</td><td><span class="pill ${ok?'ok':'no'}">${ok?'\u2713':'\u2717 wrong rate'}</span></td></tr>`; } });
+    html+='</table>';
+  }
+  // net reconciliation from parsed summary
+  const sm=window.__summary;
+  if(sm){ const recon=sm.gross-sm.taxes-sm.ded; const ok=Math.abs(recon-sm.net)<0.02; if(!ok)allGood=false;
+    html+=`<h2 style="margin-top:14px">Net reconciliation</h2><table><tr><td>Gross \u2212 taxes \u2212 deductions</td><td class="num">${fmt(recon)}</td><td>vs net ${fmt(sm.net)}</td><td><span class="pill ${ok?'ok':'no'}">${ok?'\u2713 ties out':'\u2717 mismatch'}</span></td></tr></table>`; }
+  const verdict = !anyChecked ? ['na','Upload or enter your paystub figures to verify']
+    : allGood ? ['ok','\u2713  Paycheck verified \u2014 pay, rate & contributions match the contract'] : ['no','\u2717  Discrepancy found \u2014 see red lines. Document it for your shop steward.'];
+  html=`<div class="statusbig ${verdict[0]==='ok'?'ok':verdict[0]==='no'?'no':'na'}" style="margin-bottom:12px"><span class="big">${verdict[0]==='ok'?'\u2713':verdict[0]==='no'?'\u2717':'\u2139'}</span><span>${verdict[1]}</span></div>`+html;
+  html+=`<p class="muted">Eligible basis (excl. license/longevity, per addendum): ${fmt(elig)}. Set your Traditional/Roth election % in Settings. Employer money and Roth IRA pacing are checked on the On Track tab.</p></div>`;
+  document.getElementById('vresult').innerHTML=html;
+  const net=val('aNet'); if(net>0){ if(ctype==='big')S.bigNet=net; else S.littleNet=net; save(); }
+}
+
+/* ---------- PDF PARSER (in-browser, pdf.js) ---------- */
+async function parsePaystub(ev){
+  const f=ev.target.files[0]; if(!f) return; const st=document.getElementById('parsestatus');
+  st.textContent='Parsing\u2026';
+  try{
+    const buf=await f.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise; let lines=[];
+    for(let p=1;p<=pdf.numPages;p++){ const page=await pdf.getPage(p); const tc=await page.getTextContent();
+      const rows={}; tc.items.forEach(it=>{ const y=Math.round(it.transform[5]); (rows[y]=rows[y]||[]).push([it.transform[4],it.str]); });
+      Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{ const ln=rows[y].sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join(' ').replace(/\s+/g,' ').trim(); if(ln)lines.push(ln); });
+    }
+    fillFromLines(lines); st.textContent='\u2713 Parsed \u2014 fields filled below. Review, then Verify.';
+  }catch(e){ st.textContent='Could not parse this PDF automatically \u2014 enter figures manually. ('+e.message+')'; }
+}
+const _nums=s=>(s.match(/-?[\d,]+\.\d{2,4}/g)||[]).map(x=>parseFloat(x.replace(/,/g,'')));
+const _hasDate=s=>/\d{2}\/\d{2}\/\d{4}/.test(s);
+function fillFromLines(lines){
+  const setv=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null)el.value=v; };
+  const blob=lines.join('\n');
+  const pe=blob.match(/Pay End Date:?\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  if(pe){ setv('cdate',`${pe[3]}-${pe[1]}-${pe[2]}`); }
+  const lic=lines.find(l=>/Dispatcher License Pay/i.test(l)&&_hasDate(l));
+  const typeEl=document.getElementById('ctype'); if(typeEl) typeEl.value = lic ? 'big' : 'little';
+  // deductions via global regex (robust to multi-column joined lines)
+  const defs=[...blob.matchAll(/401\(k\) Deferral\s+([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,'')));
+  const hsaM=blob.match(/Health Savings Account[^\n]*?(\d[\d,]*\.\d{2})/);
+  const megaM=blob.match(/401\(k\) Post-?tax Deferral\s+([\d,]+\.\d{2})/);
+  const loanM=blob.match(/401\(k\) Loan(?:\s*\d+)?\s+([\d,]+\.\d{2})/);
+  const cur=lines.find(l=>/^Current\b/.test(l)&&_nums(l).length>=5); const c=cur?_nums(cur):null;
+  if(c){ setv('aGross',c[0]); setv('aNet',c[4]); window.__summary={gross:c[0],taxes:c[2],ded:c[3],net:c[4]}; }
+  else window.__summary=null;
+  if(defs[0]!=null) setv('aTrad',defs[0]);                 // 1st = before-tax (Traditional)
+  if(defs[1]!=null) setv('aRoth',defs[1]);                 // 2nd = after-tax (Roth)
+  if(hsaM) setv('aHSA',parseFloat(hsaM[1].replace(/,/g,'')));
+  if(megaM) setv('aMega',parseFloat(megaM[1].replace(/,/g,'')));
+  window.__loan = loanM?parseFloat(loanM[1].replace(/,/g,'')):0;
+  window.__rated=[]; lines.forEach(l=>{ const m=l.match(/^([A-Za-z()\/ ]+?)\s+\d{2}\/\d{2}\/\d{4}.*?(\d+\.\d{4})/); if(m){ window.__rated.push({label:m[1].trim(),rate:parseFloat(m[2])}); } });
+  const e=document.getElementById('cdate'); if(e){ e.dispatchEvent(new Event('change')); }
+}
+function saveCheck(){
+  runVerify();
+  const d=document.getElementById('cdate').value;
+  const type=(document.getElementById('ctype')||{}).value||'big';
+  S.history.unshift({date:d, type, gross:val('aGross'), net:val('aNet'), trad:val('aTrad'), roth:val('aRoth'), hsa:val('aHSA'), mega:val('aMega')});
+  if(val('aNet')>0){ if(type==='big')S.bigNet=val('aNet'); else S.littleNet=val('aNet'); }
+  save(); alert('Saved to history ('+type+' check).');
+}
+
+/* ---------- ON TRACK ---------- */
+function vTrack(){
+  const today=new Date().toISOString().slice(0,10);
+  const exp=expectedBalance(today);
+  return `
+  <div class="card">
+    <h2>Retirement balance \u2014 on track to date</h2>
+    <p class="muted">Target as of ${today}, from ${fmt0(S.startBalance)} on ${S.startBalanceDate} at ${(S.annualReturn*100).toFixed(0)}% with your full contribution schedule.</p>
+    <div class="statusbig na"><span class="big">${fmt0(exp)}</span><span>is where your retirement total <b>should</b> be today to stay on plan.</span></div>
+    <div class="grid" style="margin-top:12px">
+      <div><label>Your actual retirement total</label><input type="number" id="actBal" step="100" value="${S.actualBalance||''}" placeholder="enter to compare"></div>
+      <div style="align-self:end"><button class="act" onclick="checkBal()">Check</button></div>
+    </div>
+    <div id="balres" style="margin-top:10px"></div>
+  </div>
+  <div class="card">
+    <h2>Year-to-date contribution pace</h2>
+    <p class="muted">Fraction of ${new Date().getFullYear()} elapsed \u00d7 annual target. Enter your YTD totals from the latest paystub.</p>
+    <table id="paceTbl"><tr><th>Account</th><th class="num">Annual target</th><th class="num">Should be YTD</th><th class="num">Your YTD</th><th>Status</th></tr></table>
+  </div>`;
+}
+function checkBal(){
+  const exp=expectedBalance(new Date().toISOString().slice(0,10));
+  const act=parseFloat(document.getElementById('actBal').value)||0; S.actualBalance=act; save();
+  const ok=act>=exp*0.98;
+  document.getElementById('balres').innerHTML = act===0?'' :
+    `<div class="statusbig ${ok?'ok':'no'}"><span class="big">${ok?'\u2713':'\u2717'}</span><span>${ok?'On track \u2014 ahead of or matching plan ('+fmt0(act-exp)+' vs target).':'Behind plan by '+fmt0(exp-act)+'. Worth a look.'}</span></div>`;
+}
+function renderPace(){
+  const y=new Date().getFullYear(); const frac=( (new Date()-new Date(y,0,1)) / (new Date(y+1,0,1)-new Date(y,0,1)) );
+  const sal=salaryYr(y);
+  const items=[['401(k) Trad (6%)',0.06*sal],['401(k) Roth (11%)',0.11*sal],['Employer (9%)',0.09*sal],
+    ['Roth IRA \u2013 Trenton',S.rothIRAannual],['HSA',(y>=S.hsaResumeYear?S.hsaAnnual:0)]];
+  let h='<tr><th>Account</th><th class="num">Annual target</th><th class="num">Should be YTD</th><th class="num">Your YTD</th><th>Status</th></tr>';
+  items.forEach((it,i)=>{ const shouldBe=it[1]*frac;
+    h+=`<tr><td>${it[0]}</td><td class="num">${fmt0(it[1])}</td><td class="num">${fmt0(shouldBe)}</td><td class="num"><input data-i="${i}" data-t="${shouldBe}" oninput="paceStat(this)" type="number" style="width:110px;padding:4px" placeholder="0"></td><td id="ps${i}"><span class="pill na">\u2013</span></td></tr>`; });
+  document.getElementById('paceTbl').innerHTML=h;
+}
+function paceStat(el){ const a=parseFloat(el.value)||0,t=parseFloat(el.dataset.t); const ok=a>=t*0.97;
+  document.getElementById('ps'+el.dataset.i).innerHTML = a===0?'<span class="pill na">\u2013</span>':`<span class="pill ${ok?'ok':'no'}">${ok?'\u2713 on pace':'\u2717 behind'}</span>`; }
+
+/* ---------- BUDGET ---------- */
+function vBudget(){
+  const tNet = (+S.bigNet||0) + (+S.littleNet||0);
+  const out = S.budget.reduce((s,b)=>s+(+b[1]||0),0);
+  const inc = tNet + (+S.jhanNetMonthly||0);
+  const net = inc-out;
+  const miss = (!S.bigNet||!S.littleNet);
+  let rows = S.budget.map((b,i)=>`<tr><td><input value="${b[0]}" oninput="budName(${i},this.value)" style="border:none;padding:2px"></td><td class="num"><input type="number" value="${b[1]}" oninput="budAmt(${i},this.value)" style="width:120px;text-align:right;padding:4px"></td><td><button class="act ghost" style="padding:3px 8px" onclick="budDel(${i})">\u2715</button></td></tr>`).join('');
+  return `
+  <div class="banner">Monthly income = your big check net + little check net (dispatch pay is one big + one little check per month). Save one of each on the Paycheck tab and this fills automatically.${miss?' <b>Save the missing check type to complete the month.</b>':''}</div>
+  <div class="card"><h2>Monthly income</h2>
+    <table>
+      <tr><td>Big check net (latest saved)</td><td class="num">${S.bigNet?fmt(S.bigNet):'<span class="pill na">not saved</span>'}</td></tr>
+      <tr><td>Little check net (latest saved)</td><td class="num">${S.littleNet?fmt(S.littleNet):'<span class="pill na">not saved</span>'}</td></tr>
+      <tr><td>Jhan take-home / mo <input type="number" value="${S.jhanNetMonthly}" oninput="jhanNet(this.value)" style="width:120px;padding:4px"></td><td class="num">${fmt(+S.jhanNetMonthly||0)}</td></tr>
+      <tr><th>Total monthly income</th><th class="num">${fmt(inc)}</th></tr>
+    </table>
+  </div>
+  <div class="card"><h2>Monthly outflow</h2>
+    <table>${rows}<tr><th>Total outflow</th><th class="num">${fmt(out)}</th><th></th></tr></table>
+    <button class="act ghost" style="margin-top:8px" onclick="budAdd()">+ Add line</button>
+  </div>
+  <div class="card"><div class="statusbig ${net>=0?'ok':'no'}"><span class="big">${net>=0?'+':''}${fmt(net)}</span><span>${net>=0?'monthly surplus':'monthly gap \u2014 OT or the personal-loan attack covers it'}</span></div></div>`;
+}
+function budName(i,v){S.budget[i][0]=v;save();}
+function budAmt(i,v){S.budget[i][1]=parseFloat(v)||0;save();render();}
+function budDel(i){S.budget.splice(i,1);save();render();}
+function budAdd(){S.budget.push(['New line',0]);save();render();}
+function jhanNet(v){S.jhanNetMonthly=parseFloat(v)||0;save();render();}
+
+/* ---------- HISTORY ---------- */
+function vHistory(){
+  if(!S.history.length) return '<div class="card"><h2>History</h2><p class="muted">No saved paychecks yet. Verify one and tap \u201cSave to history\u201d.</p></div>';
+  let rows=S.history.map((h,i)=>`<tr><td>${h.date}</td><td>${h.type||'\u2014'}</td><td class="num">${fmt(h.gross)}</td><td class="num">${fmt(h.net)}</td><td class="num">${fmt(h.trad)}</td><td class="num">${fmt(h.roth)}</td><td><button class="act ghost" style="padding:3px 8px" onclick="histDel(${i})">\u2715</button></td></tr>`).join('');
+  return `<div class="card"><h2>Saved paychecks</h2><table><tr><th>Date</th><th>Type</th><th class="num">Gross</th><th class="num">Net</th><th class="num">Trad</th><th class="num">Roth</th><th></th></tr>${rows}</table></div>`;
+}
+function histDel(i){S.history.splice(i,1);save();render();}
+
+/* ---------- SETTINGS ---------- */
+function vSettings(){
+  return `<div class="card"><h2>Settings</h2><div class="grid">
+    <div><label>Hire/anniversary date</label><input type="date" id="s_hire" value="${S.hireDate}"></div>
+    <div><label>Annual return assumption</label><input type="number" step="0.005" id="s_ret" value="${S.annualReturn}"></div>
+    <div><label>Starting retirement balance</label><input type="number" id="s_sb" value="${S.startBalance}"></div>
+    <div><label>As of date</label><input type="date" id="s_sbd" value="${S.startBalanceDate}"></div>
+    <div><label>Jhan invests / yr (timeline)</label><input type="number" id="s_ji" value="${S.jhanInvestAnnual}"></div>
+    <div><label>Jhan take-home / mo (budget)</label><input type="number" id="s_jn" value="${S.jhanNetMonthly}"></div>
+    <div><label>Roth IRA target / yr</label><input type="number" id="s_ira" value="${S.rothIRAannual}"></div>
+    <div><label>HSA resume year</label><input type="number" id="s_hsay" value="${S.hsaResumeYear}"></div>
+    <div><label>401(k) Traditional election %</label><input type="number" step="0.01" id="s_trad" value="${S.tradPct}"><div class="hint">e.g. 0.06 = 6%</div></div>
+    <div><label>401(k) Roth election %</label><input type="number" step="0.01" id="s_roth" value="${S.rothPct}"><div class="hint">e.g. 0.11 = 11% (0 if not enrolled)</div></div>
+  </div>
+  <div class="row" style="margin-top:12px;gap:8px"><button class="act" onclick="saveSettings()">Save settings</button>
+  <button class="act ghost" onclick="if(confirm('Erase all saved data in this browser?')){localStorage.removeItem('dispatchPay');S=load();render();}">Reset all data</button></div>
+  <p class="muted" style="margin-top:10px">To update the pay chart after a new contract: edit the CHART object at the top of index.html and add a new effective-date column.</p>
+  </div>`;
+}
+function saveSettings(){
+  S.hireDate=document.getElementById('s_hire').value; S.annualReturn=parseFloat(document.getElementById('s_ret').value)||0.07;
+  S.startBalance=parseFloat(document.getElementById('s_sb').value)||0; S.startBalanceDate=document.getElementById('s_sbd').value;
+  S.jhanInvestAnnual=parseFloat(document.getElementById('s_ji').value)||0; S.jhanNetMonthly=parseFloat(document.getElementById('s_jn').value)||0;
+  S.rothIRAannual=parseFloat(document.getElementById('s_ira').value)||0; S.hsaResumeYear=parseInt(document.getElementById('s_hsay').value)||2027;
+  S.tradPct=parseFloat(document.getElementById('s_trad').value)||0; S.rothPct=parseFloat(document.getElementById('s_roth').value)||0;
+  save(); alert('Saved.'); go('track');
+}
+
+/* ---------- boot ---------- */
+const _origRender=render;
+render=function(){ _origRender(); if(tab==='track') renderPace(); };
+render();
+</script>
+</body>
+</html>
