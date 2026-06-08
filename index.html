@@ -70,11 +70,14 @@ const DEFAULTS = {
   rothIRAannual:7000, hsaResumeYear:2026, hsaAnnual:7250, megaAnnualTarget:0,
   tradPct:0.06, rothPct:0.00,
   budget:[
-    ['Housing (full stack)',2727.80],['Car loan',363],['Student loans',333],['Personal loan (attack)',977],
-    ['Groceries',650],['Gas (2 vehicles)',200],['Utilities',180],['Water/sewer',45],['Internet',75],
-    ['Cell phones',130],['Streaming',45],['Dining out',250],['Entertainment',100],['Clothing',100],
-    ['Personal care',65],['Medical copays',55],['Misc subscriptions',60],['Gifts (amortized)',80],
-    ['Emergency fund build',500],['Roth IRA \u2013 Trenton',334]
+    ['Housing (mortgage stack)',2727.80],
+    ['Credit cards (Chase+Discover ~$7,284)',150],
+    ['Car loan',363],['Student loan (MOHELA)',448],['Personal loan',150],
+    ['Electric',250],['Phone',55],['Internet',67],['Water/sewer',45],
+    ['Shopping',617],['Auto & Transport',371],['Dining & Drinks',279],['Groceries',249],
+    ['Uncategorized',126],['Fees',123],['Legal',97],['Pets',80],['Software & Tech',80],
+    ['Travel & Vacation',50],['Home & Garden',39],['Entertainment & Rec.',30],
+    ['Health & Wellness',12],['Medical',8],['Personal Care',7],['Money to Jhan\u2019s Family',4],['Taxes',2]
   ],
   history:[], bigNet:0, littleNet:0
 };
@@ -140,6 +143,12 @@ function vVerify(){
     <input type="file" id="pdffile" accept="application/pdf" onchange="parsePaystub(event)">
     <div id="parsestatus" class="hint" style="margin-top:6px">Pick your United advice PDF \u2014 it parses in your browser and fills the fields below. Nothing is uploaded.</div>
   </div>
+  <div class="card" style="border-color:var(--good)">
+    <h2>Batch check (multiple PDFs)</h2>
+    <input type="file" id="batchfiles" accept="application/pdf" multiple onchange="batchVerify(event)">
+    <div class="hint" style="margin-top:6px">Select several advice PDFs at once \u2014 each is parsed and checked; you get a pass/fail summary. All in your browser.</div>
+    <div id="batchresult" style="margin-top:10px"></div>
+  </div>
   <div class="card">
     <h2>Enter paycheck</h2>
     <div class="grid">
@@ -154,6 +163,10 @@ function vVerify(){
         <div><label>Of those, days at 2\u00d7 (consecutive)</label><input type="number" id="otdouble" min="0" step="1" value="0"><div class="hint">First day 1.5\u00d7; each consecutive day after = 2\u00d7</div></div>
       </div>
     </div>
+    <div class="grid" style="margin-top:8px">
+      <div><label>Shift differential</label><select id="shifttype"><option value="0.52">Evening 1400\u20131759 (+$0.52/hr)</option><option value="0.59">Overnight 1800\u20130459 (+$0.59/hr)</option><option value="0">None</option></select></div>
+      <div><label>Differential hours (this check)</label><input type="number" id="shifthrs" min="0" step="0.01" value="0"><div class="hint">From the Shift Differential line\u2019s hours</div></div>
+    </div>
     <h2 style="margin-top:14px">Paystub figures (what it actually shows)</h2>
     <div class="grid">
       <div><label>Gross pay this check</label><input type="number" id="aGross" step="0.01" placeholder="0.00"></div>
@@ -162,6 +175,7 @@ function vVerify(){
       <div><label>401(k) Roth (if enrolled)</label><input type="number" id="aRoth" step="0.01" placeholder="0.00"></div>
       <div><label>HSA</label><input type="number" id="aHSA" step="0.01" placeholder="0.00"></div>
       <div><label>Post-tax / Mega Backdoor</label><input type="number" id="aMega" step="0.01" placeholder="0.00"></div>
+      <div><label>Shift differential paid</label><input type="number" id="aShift" step="0.01" placeholder="0.00"></div>
     </div>
     <div class="row" style="margin-top:12px;gap:8px">
       <button class="act" onclick="runVerify()">Verify</button>
@@ -186,10 +200,12 @@ function runVerify(){
   const expGross=base+lic+otp, elig=base+otp;
   const tp=S.tradPct, rp=S.rothPct;
   const gb = val('aGross')>0 ? val('aGross') : expGross;   // employee deferrals = % of gross
+  const shRate = parseFloat((document.getElementById('shifttype')||{}).value||0), shHrs = val('shifthrs');
   const rows=[
     ['Regular base (\u00bd month)',base,null],
     [`License premium ${ctype==='big'?'(full month \u2014 big check)':'(little check \u2014 expect $0)'}`,lic,null],
     ['Overtime'+(ot.t?` (${ot.t-ot.dbl}\u00d71.5\u00d7 + ${ot.dbl}\u00d72\u00d7)`:''),otp,null],
+    [`Shift differential ($${shRate.toFixed(2)}/hr \u00d7 ${shHrs} hr)`, shRate*shHrs, val('aShift')],
     ['Gross pay (regular portion)',expGross,val('aGross')],
     [`401(k) Traditional \u2014 ${(tp*100).toFixed(0)}% of gross`,tp*gb,val('aTrad')],
     [`401(k) Roth \u2014 ${(rp*100).toFixed(0)}% of gross`,rp*gb,val('aRoth')],
@@ -228,18 +244,20 @@ function runVerify(){
 }
 
 /* ---------- PDF PARSER (in-browser, pdf.js) ---------- */
+async function fileToLines(file){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise; let lines=[];
+  for(let p=1;p<=pdf.numPages;p++){ const page=await pdf.getPage(p); const tc=await page.getTextContent();
+    const rows={}; tc.items.forEach(it=>{ const y=Math.round(it.transform[5]); (rows[y]=rows[y]||[]).push([it.transform[4],it.str]); });
+    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{ const ln=rows[y].sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join(' ').replace(/\s+/g,' ').trim(); if(ln)lines.push(ln); });
+  }
+  return lines;
+}
 async function parsePaystub(ev){
   const f=ev.target.files[0]; if(!f) return; const st=document.getElementById('parsestatus');
   st.textContent='Parsing\u2026';
-  try{
-    const buf=await f.arrayBuffer();
-    const pdf=await pdfjsLib.getDocument({data:buf}).promise; let lines=[];
-    for(let p=1;p<=pdf.numPages;p++){ const page=await pdf.getPage(p); const tc=await page.getTextContent();
-      const rows={}; tc.items.forEach(it=>{ const y=Math.round(it.transform[5]); (rows[y]=rows[y]||[]).push([it.transform[4],it.str]); });
-      Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{ const ln=rows[y].sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join(' ').replace(/\s+/g,' ').trim(); if(ln)lines.push(ln); });
-    }
-    fillFromLines(lines); st.textContent='\u2713 Parsed \u2014 fields filled below. Review, then Verify.';
-  }catch(e){ st.textContent='Could not parse this PDF automatically \u2014 enter figures manually. ('+e.message+')'; }
+  try{ fillFromLines(await fileToLines(f)); st.textContent='\u2713 Parsed \u2014 fields filled below. Review, then Verify.'; }
+  catch(e){ st.textContent='Could not parse this PDF automatically \u2014 enter figures manually. ('+e.message+')'; }
 }
 const _nums=s=>(s.match(/-?[\d,]+\.\d{2,4}/g)||[]).map(x=>parseFloat(x.replace(/,/g,'')));
 const _hasDate=s=>/\d{2}\/\d{2}\/\d{4}/.test(s);
@@ -263,8 +281,39 @@ function fillFromLines(lines){
   if(hsaM) setv('aHSA',parseFloat(hsaM[1].replace(/,/g,'')));
   if(megaM) setv('aMega',parseFloat(megaM[1].replace(/,/g,'')));
   window.__loan = loanM?parseFloat(loanM[1].replace(/,/g,'')):0;
+  const shiftL=lines.find(l=>/Shift Differential/i.test(l));
+  if(shiftL){ const sn=_nums(shiftL); if(sn.length>=3){ const rate=sn[0];
+    setv('shifttype', rate>=0.59?'0.59':(rate>=0.52?'0.52':'0')); setv('shifthrs', sn[1]); setv('aShift', sn[2]); } }
   window.__rated=[]; lines.forEach(l=>{ const m=l.match(/^([A-Za-z()\/ ]+?)\s+\d{2}\/\d{2}\/\d{4}.*?(\d+\.\d{4})/); if(m){ window.__rated.push({label:m[1].trim(),rate:parseFloat(m[2])}); } });
   const e=document.getElementById('cdate'); if(e){ e.dispatchEvent(new Event('change')); }
+}
+/* ---------- BATCH ---------- */
+async function batchVerify(ev){
+  const files=[...ev.target.files]; if(!files.length) return; const out=document.getElementById('batchresult');
+  out.innerHTML='Parsing '+files.length+' file(s)\u2026'; const results=[];
+  for(const f of files){ try{ results.push(checkParsed(await fileToLines(f))); }
+    catch(e){ results.push({date:f.name,type:'?',gross:0,net:0,ok:false,issues:['parse failed']}); } }
+  results.sort((a,b)=>a.date>b.date?1:-1);
+  let h='<table><tr><th>Pay end</th><th>Type</th><th class="num">Gross</th><th class="num">Net</th><th>Result</th></tr>';
+  let pass=0; results.forEach(r=>{ if(r.ok)pass++; h+=`<tr><td>${r.date}</td><td>${r.type}</td><td class="num">${fmt(r.gross)}</td><td class="num">${fmt(r.net)}</td><td><span class="pill ${r.ok?'ok':'no'}">${r.ok?'\u2713 pass':'\u2717 '+r.issues.join('; ')}</span></td></tr>`; });
+  const sumNet=results.reduce((s,r)=>s+r.net,0);
+  h+=`</table><p class="muted">${pass}/${results.length} passed. Combined net across these checks: ${fmt(sumNet)}.</p>`;
+  out.innerHTML=h;
+}
+function checkParsed(lines){
+  const blob=lines.join('\n'); const issues=[];
+  const pe=blob.match(/Pay End Date:?\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  const date = pe?`${pe[3]}-${pe[1]}-${pe[2]}`:'?';
+  const base=date!=='?'?perCheckBase(date):0, hr=date!=='?'?hourly(date):0;
+  const licL=lines.find(l=>/Dispatcher License Pay/i.test(l)&&_hasDate(l)); const type=licL?'big':'little';
+  const cur=lines.find(l=>/^Current\b/.test(l)&&_nums(l).length>=5); const c=cur?_nums(cur):null;
+  const gross=c?c[0]:0, taxes=c?c[2]:0, ded=c?c[3]:0, net=c?c[4]:0;
+  const regL=lines.find(l=>/^Regular Pay\b/i.test(l)&&!_hasDate(l)); const reg=regL?_nums(regL)[0]:null;
+  if(reg!=null && date!=='?' && Math.abs(reg-base)>1) issues.push('base off');
+  if(licL && date!=='?'){ const ln=_nums(licL); if(ln.length && Math.abs(ln[0]-licenseMonthly(date))>1) issues.push('license off'); }
+  if(c && Math.abs((gross-taxes-ded)-net)>0.02) issues.push('net mismatch');
+  if(date!=='?') lines.forEach(l=>{ const m=l.match(/^([A-Za-z()\/ ]+?)\s+\d{2}\/\d{2}\/\d{4}.*?(\d+\.\d{4})/); if(m){ const rt=parseFloat(m[2]); if(rt>10 && Math.abs(rt-hr)>0.02) issues.push(m[1].trim()+' rate'); } });
+  return {date, type, gross, net, ok:issues.length===0, issues};
 }
 function saveCheck(){
   runVerify();
@@ -338,7 +387,53 @@ function vBudget(){
     <table>${rows}<tr><th>Total outflow</th><th class="num">${fmt(out)}</th><th></th></tr></table>
     <button class="act ghost" style="margin-top:8px" onclick="budAdd()">+ Add line</button>
   </div>
-  <div class="card"><div class="statusbig ${net>=0?'ok':'no'}"><span class="big">${net>=0?'+':''}${fmt(net)}</span><span>${net>=0?'monthly surplus':'monthly gap \u2014 OT or the personal-loan attack covers it'}</span></div></div>`;
+  <div class="card" style="border-color:var(--good)"><h2>Import spending (Rocket Money CSV)</h2>
+    <input type="file" id="csvfile" accept=".csv,text/csv" onchange="importBudgetCSV(event)">
+    <div id="csvstatus" class="hint" style="margin-top:6px">Export your transactions from Rocket Money (CSV), then pick the file here. It\u2019s parsed in your browser \u2014 nothing is uploaded.</div>
+    ${S.imported?`<table style="margin-top:10px"><tr><th>Category (recent avg)</th><th class="num">$/mo</th></tr>${Object.entries(S.imported).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${k}</td><td class="num">${fmt(v)}</td></tr>`).join('')}<tr><th>Imported total</th><th class="num">${fmt(Object.values(S.imported).reduce((s,v)=>s+v,0))}</th></tr></table>
+    ${S.importedMeta&&S.importedMeta.interest>1?`<div class="banner" style="margin-top:8px"><b>Credit-card interest ~${fmt(S.importedMeta.interest)}/mo</b> in this data \u2014 attack the balance first.</div>`:''}
+    <button class="act" style="margin-top:8px" onclick="applyImported()">Apply to my budget (replace discretionary)</button>
+    <div class="hint" style="margin-top:4px">Keeps housing, loans, utilities, insurance & savings; replaces discretionary lines with these. Auto line includes Tesla insurance.</div>`:''}
+  </div>
+  <div class="card"><div class="statusbig ${net>=0?'ok':'no'}"><span class="big">${net>=0?'+':''}${fmt(net)}</span><span>${net>=0?'monthly surplus':'monthly gap \u2014 trim discretionary + overtime'}</span></div></div>`;
+}
+function parseCSV(text){
+  const rows=[]; let field='',row=[],inq=false;
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(inq){ if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else inq=false; } else field+=c; }
+    else if(c==='"') inq=true;
+    else if(c===',') { row.push(field); field=''; }
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n')i++; if(field!==''||row.length){ row.push(field); rows.push(row); row=[]; field=''; } }
+    else field+=c; }
+  if(field!==''||row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+async function importBudgetCSV(ev){
+  const f=ev.target.files[0]; if(!f)return; const st=document.getElementById('csvstatus'); st.textContent='Reading\u2026';
+  try{
+    const rows=parseCSV(await f.text()); const H=rows[0].map(s=>s.trim());
+    const di=H.indexOf('Date'), ai=H.indexOf('Amount'), ci=H.indexOf('Category'), ni=H.indexOf('Name');
+    if(di<0||ai<0||ci<0){ st.textContent='Unexpected CSV format \u2014 need Date, Amount, Category columns.'; return; }
+    const data=rows.slice(1).map(r=>({date:new Date(r[di]),amt:parseFloat(r[ai]),cat:(r[ci]||'').trim(),name:(r[ni]||'')}))
+      .filter(d=>!isNaN(d.date)&&!isNaN(d.amt));
+    if(!data.length){ st.textContent='No transactions found.'; return; }
+    const rec=data;   // use the full export span (e.g. last 2 years)
+    const months=new Set(rec.map(d=>d.date.getFullYear()+'-'+d.date.getMonth())).size||1;
+    const excl=new Set(['Credit Card Payment','Cash & Checks','Rent','Loan Payment']); const rentRe=/ROBIN PROPERTY|Livble/i;
+    const interest=rec.filter(d=>/INTEREST CHARGE/i.test(d.name)).reduce((s,d)=>s+d.amt,0)/months;
+    const agg={};
+    rec.forEach(d=>{ if(d.amt<=0||excl.has(d.cat)||rentRe.test(d.name))return; const k=d.cat||'Uncategorized'; agg[k]=(agg[k]||0)+d.amt; });
+    Object.keys(agg).forEach(k=>agg[k]=Math.round(agg[k]/months));
+    S.imported=agg; S.importedMeta={months,count:rec.length,interest:Math.round(interest)}; save(); render();
+    document.getElementById('csvstatus').innerHTML=`\u2713 ${rec.length} transactions over ~${months} months \u2014 averaged into your categories.`;
+  }catch(e){ st.textContent='Could not read CSV \u2014 '+e.message; }
+}
+function applyImported(){
+  if(!S.imported)return;
+  const keepRe=/housing|loan|mortgage|electric|internet|phone|water|insurance|hsa|roth|ira|emergency|credit card/i;
+  S.budget=S.budget.filter(b=>keepRe.test(b[0]));
+  Object.entries(S.imported).forEach(([k,v])=>S.budget.push([k,v]));
+  save(); render();
 }
 function budName(i,v){S.budget[i][0]=v;save();}
 function budAmt(i,v){S.budget[i][1]=parseFloat(v)||0;save();render();}
