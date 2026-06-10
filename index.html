@@ -52,10 +52,15 @@
 
 <script>
 /* ---------- contract data (PAFCA 2022-2024 Agreement, Section 13) ---------- */
-const CHART = { // monthly base salary by step, by effective-date column
+const CHART = { // Standard (Domestic) Dispatcher monthly base by step, by effective-date column
   '2022':[7161,7711,8073,8587,8999,9228,9704,10038,10803,11176,12536],
   '2023':[7412,7981,8356,8888,9314,9551,10044,10389,11181,11567,12975],
   '2024':[7671,8260,8648,9199,9640,9885,10395,10753,11572,11972,13429]
+};
+const CHART_PREMIUM = { // Chief Dispatcher / Operations Manager / ATC Coordinator / Full-Time Instructor scale (13-A)
+  '2022':[7681,8271,8659,9210,9652,9898,10408,10766,11587,11987,13445],
+  '2023':[7950,8560,8962,9532,9990,10244,10772,11143,11993,12407,13916],
+  '2024':[8228,8860,9276,9866,10339,10603,11149,11533,12412,12841,14403]
 };
 const HRS_YEAR = 1880;            // base*12/1880 reproduces the contract $55.20 Step-2 hourly
 const LICENSE_FLAT = 370, LICENSE_VAR = 0.045;
@@ -69,6 +74,11 @@ const DEFAULTS = {
   birthYear:1990, retireAge:55,
   jhanNetMonthly:0, jhanInvestAnnual:0,
   rothIRAannual:7000, hsaResumeYear:2026, hsaAnnual:7250, megaAnnualTarget:0,
+  tgtTrad:0, tgtRoth:0, tgtEmployer:0, retAccounts:[],
+  baseScale:'standard',                       // 'standard' = Domestic; 'premium' = Chief/OM/ATC Coord/FT Instructor
+  quals:{ intlAreas:0, ifs:false, lca:false, wbom:false },   // monthly qualification premiums (13-A-7..10)
+  premRates:{ intlFirst:200, intlAddl:100, intlCap:400, ifs:200, lca:200, wbom:200 },
+  chartOverride:null, chartPremiumOverride:null, taxOverride:null,
   tradPct:0.06, rothPct:0.00,
   budget:[
     ['Housing (mortgage stack)',2727.80],
@@ -162,31 +172,37 @@ async function reviewPdf(src){
   let m=document.getElementById('pdfmodal'); if(m)m.remove();
   m=document.createElement('div'); m.id='pdfmodal';
   m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.92);z-index:9999;overflow:auto;padding:14px;-webkit-overflow-scrolling:touch';
-  const issuesHtml = flags.length ? '<b style="color:#fda4af">Issues circled below:</b><ul style="margin:6px 0 0;padding-left:18px">'+flags.map(f=>'<li>'+f.reason+'</li>').join('')+'</ul>'
+  const dAmt=r.discAmt||0;
+  const banner = dAmt<-0.5 ? `<div style="background:#7f1d1d;color:#fff;padding:8px 12px;border-radius:8px;font-weight:700;margin-top:6px">\u2193 Shorted by ${fmt(-dAmt)}</div>`
+    : dAmt>0.5 ? `<div style="background:#14532d;color:#fff;padding:8px 12px;border-radius:8px;font-weight:700;margin-top:6px">\u2191 Overpaid by ${fmt(dAmt)}</div>` : '';
+  const issuesHtml = flags.length ? '<b style="color:#fda4af">Highlighted below:</b><ul style="margin:6px 0 0;padding-left:18px">'+flags.map(f=>'<li>'+f.reason+'</li>').join('')+'</ul>'
     : '<b style="color:#86efac">\u2713 No discrepancies detected on this stub.</b>';
-  m.innerHTML='<div style="max-width:760px;margin:0 auto;color:#fff"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px"><div><div style="font-size:18px;font-weight:700">Single paystub review \u2014 '+(r.date||'')+'</div><div style="font-size:13px;margin-top:4px">'+issuesHtml+'</div></div><button onclick="document.getElementById(\'pdfmodal\').remove()" style="background:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700">Close</button></div><div id="pdfpages"></div></div>';
+  m.innerHTML='<div style="max-width:820px;margin:0 auto;color:#fff"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px"><div><div style="font-size:18px;font-weight:700">Single paystub review \u2014 '+(r.date||'')+'</div><div style="font-size:13px;margin-top:4px">'+issuesHtml+'</div>'+banner+'</div><button onclick="document.getElementById(\'pdfmodal\').remove()" style="background:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700">Close</button></div><div id="pdfpages"></div></div>';
   document.body.appendChild(m);
-  const host=m.querySelector('#pdfpages'); const scale=Math.min(2, (Math.min(720,window.innerWidth-28))/ (pages[0].page.getViewport({scale:1}).width));
-  for(const pg of pages){ const vp=pg.page.getViewport({scale}); const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+  const host=m.querySelector('#pdfpages');
+  const cssW=Math.min(780,window.innerWidth-28);
+  const scale=cssW/(pages[0].page.getViewport({scale:1}).width);
+  const dpr=Math.min(3, (window.devicePixelRatio||1)*1.5);     // render sharp, display at css width
+  for(const pg of pages){ const vp=pg.page.getViewport({scale:scale*dpr}); const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
     cv.style.cssText='width:100%;height:auto;background:#fff;border-radius:8px;margin-bottom:12px;display:block'; host.appendChild(cv);
     const ctx=cv.getContext('2d'); await pg.page.render({canvasContext:ctx,viewport:vp}).promise;
-    ctx.strokeStyle='#e11d48'; ctx.lineWidth=3;
-    pg.lines.forEach(ln=>{ if(flags.some(f=>f.re.test(ln.text))){ const a=vp.convertToViewportPoint(ln.x0,ln.y), b=vp.convertToViewportPoint(ln.x1,ln.y);
-      const cx=(a[0]+b[0])/2, cy=a[1]-4, rx=Math.abs(b[0]-a[0])/2+14, ry=13;
-      ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,2*Math.PI); ctx.stroke(); } }); }
+    // highlight bands (translucent) instead of circles \u2014 readable even when lines are close
+    const hits=pg.lines.filter(ln=>flags.some(f=>f.re.test(ln.text)));
+    hits.forEach(ln=>{ const a=vp.convertToViewportPoint(ln.x0,ln.y), b=vp.convertToViewportPoint(ln.x1,ln.y);
+      const x=Math.min(a[0],b[0])-6*dpr, w=Math.abs(b[0]-a[0])+12*dpr, h=20*dpr, yc=a[1]-15*dpr;
+      ctx.fillStyle='rgba(250,204,21,.38)'; ctx.fillRect(x,yc,w,h);
+      ctx.strokeStyle='#e11d48'; ctx.lineWidth=2*dpr; ctx.strokeRect(x,yc,w,h); }); }
 }
 async function storeAndRecord(file, lines, status){
   const r=checkParsed(lines); if(r.date==='?') return r;
-  const blob=lines.join('\n');
-  const defs=[...blob.matchAll(/401\(k\) Deferral\s+([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,'')));
-  const hsaM=blob.match(/Health Savings Account[^\n]*?(\d[\d,]*\.\d{2})/);
   const id='pdf-'+r.date;
   try{ if(file) await idbPut(id, file); }catch(e){}
   const prior=S.history.find(h=>h.date===r.date);
   S.history = S.history.filter(h=>h.date!==r.date);   // upsert by pay-end date
-  S.history.unshift({date:r.date, type:r.type, gross:r.gross, net:r.net,
-    trad:defs[0]||0, roth:defs[1]||0, hsa:hsaM?parseFloat(hsaM[1].replace(/,/g,'')):0, mega:0,
-    ok:r.ok, issues:r.issues, pdfId:file?id:null, status: status || (prior&&prior.status==='reviewed'?'reviewed':'new')});
+  S.history.unshift({date:r.date, type:r.type, gross:r.gross, net:r.net, taxes:r.taxes, ded:r.ded,
+    fed:r.fed, state:r.state, fica:r.fica, trad:r.trad, roth:r.roth, hsa:r.hsa, loan:r.loan, eff:r.eff,
+    discAmt:r.discAmt, ok:r.ok, issues:r.issues, pdfId:file?id:null,
+    status: status || (prior&&prior.status==='reviewed'?'reviewed':'new')});
   save(); return r;
 }
 
@@ -200,9 +216,17 @@ function annivCount(hire, asOf){ // completed years since hire (anniversary each
 }
 function stepFor(asOf){ return Math.min(10, annivCount(S.hireDate, asOf)); }
 function rateCol(asOf){ const d=new Date(asOf); if(d<new Date('2023-12-01'))return '2022'; if(d<new Date('2024-12-01'))return '2023'; return '2024'; }
-function monthlyBase(asOf){ return CHART[rateCol(asOf)][stepFor(asOf)]; }
+function activeChart(){ const prem=(S.baseScale==='premium'); const ov=prem?S.chartPremiumOverride:S.chartOverride; return ov||(prem?CHART_PREMIUM:CHART); }
+function monthlyBase(asOf){ return activeChart()[rateCol(asOf)][stepFor(asOf)]; }
 function hourly(asOf){ return monthlyBase(asOf)*12/HRS_YEAR; }
 function licenseMonthly(asOf){ return LICENSE_FLAT + LICENSE_VAR*monthlyBase(asOf); }
+function qualPremiumMonthly(){ const q=S.quals||{}, R=S.premRates||{intlFirst:200,intlAddl:100,intlCap:400,ifs:200,lca:200,wbom:200}; let p=0;
+  if(q.intlAreas>0) p+=Math.min(R.intlCap, R.intlFirst+(q.intlAreas-1)*R.intlAddl);
+  if(q.ifs) p+=R.ifs; if(q.lca) p+=R.lca; if(q.wbom) p+=R.wbom; return p; }
+function qualBreakdown(){ const q=S.quals||{}, R=S.premRates||{}; const parts=[];
+  if(q.intlAreas>0) parts.push(`Intl \u00d7${q.intlAreas} (${fmt0(Math.min(R.intlCap,R.intlFirst+(q.intlAreas-1)*R.intlAddl))})`);
+  if(q.ifs) parts.push(`IFS (${fmt0(R.ifs)})`); if(q.lca) parts.push(`LCA (${fmt0(R.lca)})`); if(q.wbom) parts.push(`WB-OM (${fmt0(R.wbom)})`);
+  return parts.join(' + '); }
 function perCheckBase(asOf){ return monthlyBase(asOf)/2; }
 function perCheckLicense(asOf){ return licenseMonthly(asOf)/2; }
 function otPay(asOf, totalDays, doubleDays){
@@ -231,12 +255,31 @@ function expectedBalance(asOf){
 }
 function projAtRetire(){ return expectedBalance(new Date(retireYear(),11,31).toISOString().slice(0,10)); }
 
+/* ---------- IRS limits (dynamic by year) & tax math ---------- */
+const IRS_LIMITS = {
+  2025:{deferral:23500, catch50:7500, catch60:11250, ira:7000, hsaSelf:4300, hsaFamily:8550, dc415:70000, compCap:350000, stdMFJ:30000},
+  2026:{deferral:24500, catch50:8000, catch60:11250, ira:7000, hsaSelf:4400, hsaFamily:8750, dc415:72000, compCap:360000, stdMFJ:31500}
+};
+function irs(y){ return IRS_LIMITS[y] || IRS_LIMITS[Math.max(...Object.keys(IRS_LIMITS).map(Number))]; }
+// Federal MFJ tax tables by year (IRS Rev Procs). brackets: [upperBound, rate]; std = standard deduction.
+const TAX_TABLE = {
+  2024:{ std:29200, brackets:[[23200,.10],[94300,.12],[201050,.22],[383900,.24],[487450,.32],[731200,.35],[Infinity,.37]] },
+  2025:{ std:31500, brackets:[[23850,.10],[96950,.12],[206700,.22],[394600,.24],[501050,.32],[751600,.35],[Infinity,.37]] },
+  2026:{ std:32200, brackets:[[24800,.10],[100800,.12],[211100,.22],[402500,.24],[510300,.32],[768700,.35],[Infinity,.37]] }
+};
+function taxYears(){ return Object.keys(S.taxOverride||TAX_TABLE).map(Number).sort((a,b)=>a-b); }
+function taxFor(y){ const T=S.taxOverride||TAX_TABLE; if(T[y])return T[y]; const ys=taxYears(); return T[ys[ys.length-1]]; }  // go out as far as published, then hold latest
+function fedTax(taxable,y){ const br=taxFor(y).brackets; let t=0,prev=0; for(const [cap,rate] of br){ if(taxable>prev){ t+=(Math.min(taxable,cap)-prev)*rate; prev=cap; } else break; } return Math.max(0,t); }
+function fedMarginal(taxable,y){ for(const [cap,rate] of taxFor(y).brackets){ if(taxable<=cap) return rate; } return .37; }
+function stdMFJ(y){ return taxFor(y).std; }
+const IL_RATE=0.0495, FICA_RATE=0.0765;
+
 /* ---------- UI framework ---------- */
-const TABS=[['verify','Paycheck'],['track','On Track'],['budget','Budget'],['history','Queue'],['settings','Settings']];
+const TABS=[['verify','Paycheck'],['track','Retirement'],['tax','Tax'],['budget','Budget'],['history','Queue'],['settings','Settings']];
 let tab='verify';
 function render(){
   document.getElementById('nav').innerHTML = TABS.map(t=>`<button class="${t[0]===tab?'active':''}" onclick="go('${t[0]}')">${t[1]}</button>`).join('');
-  document.getElementById('main').innerHTML = ({verify:vVerify,track:vTrack,budget:vBudget,history:vHistory,settings:vSettings})[tab]();
+  document.getElementById('main').innerHTML = ({verify:vVerify,track:vTrack,tax:vTax,budget:vBudget,history:vHistory,settings:vSettings})[tab]();
   if(tab==='verify') wireVerify();
 }
 function go(t){ tab=t; render(); }
@@ -307,13 +350,15 @@ function runVerify(){
   const base=perCheckBase(d), lic=(ctype==='big'?licenseMonthly(d):0), otp=otPay(d,ot.t,ot.dbl);
   const shRate = parseFloat((document.getElementById('shifttype')||{}).value||0), shHrs = val('shifthrs');
   const shiftExp = shRate*shHrs;
-  const knownGross = base+lic+otp+shiftExp;   // components the app can derive
+  const qualPrem = (ctype==='big') ? qualPremiumMonthly() : 0;   // monthly quals land on the big check, like license
+  const knownGross = base+lic+otp+shiftExp+qualPrem;   // components the app can derive
   const expGross=knownGross, elig=base+otp;
   const tp=S.tradPct, rp=S.rothPct;
   const gb = val('aGross')>0 ? val('aGross') : knownGross;   // employee deferrals = % of total gross
   const rows=[
-    ['Regular base (\u00bd month)',base,null],
+    ['Regular base (\u00bd month)'+(S.baseScale==='premium'?' \u2014 premium scale':''),base,null],
     [`License premium ${ctype==='big'?'(full month \u2014 big check)':'(little check \u2014 expect $0)'}`,lic,null],
+    ...(qualPrem>0 ? [[`Qualification premiums: ${qualBreakdown()}`, qualPrem, null]] : []),
     ['Overtime'+(ot.t?` (${ot.t-ot.dbl}\u00d71.5\u00d7 + ${ot.dbl}\u00d72\u00d7)`:''),otp,null],
     [`Shift differential ($${shRate.toFixed(2)}/hr \u00d7 ${shHrs} hr)`, shiftExp, val('aShift')],
     [`401(k) Traditional \u2014 ${(tp*100).toFixed(0)}% of gross`,tp*gb,val('aTrad')],
@@ -433,12 +478,24 @@ function checkParsed(lines){
   const licL=lines.find(l=>/Dispatcher License Pay/i.test(l)&&_hasDate(l)); const type=licL?'big':'little';
   const cur=lines.find(l=>/^Current\b/.test(l)&&_nums(l).length>=5); const c=cur?_nums(cur):null;
   const gross=c?c[0]:0, taxes=c?c[2]:0, ded=c?c[3]:0, net=c?c[4]:0;
+  const grab=re=>{ const l=lines.find(x=>re.test(x)); return l?(_nums(l).pop()||0):0; };
+  const fed=grab(/Federal\s+(Income\s+)?Tax|Fed(eral)?\s+Withholding|Fed\s+W\/?H/i);
+  const ss=grab(/Social Security|OASDI|Fed\s+OASDI/i);
+  const med=grab(/Medicare|Fed\s+MED/i);
+  const state=grab(/IL\b.*(Tax|Withholding)|State\s+(Income\s+)?Tax|Illinois/i);
+  const fica=ss+med;
+  const defs=[...blob.matchAll(/401\(k\) Deferral\s+([\d,]+\.\d{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,'')));
+  const hsaM=blob.match(/Health Savings Account[^\n]*?(\d[\d,]*\.\d{2})/);
+  const loanM=blob.match(/401\(k\) Loan(?:\s*\d+)?\s+([\d,]+\.\d{2})/);
+  const trad=defs[0]||0, roth=defs[1]||0, hsa=hsaM?parseFloat(hsaM[1].replace(/,/g,'')):0, loan=loanM?parseFloat(loanM[1].replace(/,/g,'')):0;
   const regL=lines.find(l=>/^Regular Pay\b/i.test(l)&&!_hasDate(l)); const reg=regL?_nums(regL)[0]:null;
-  if(reg!=null && date!=='?' && Math.abs(reg-base)>1) issues.push('base off');
-  if(licL && date!=='?'){ const ln=_nums(licL); if(ln.length && Math.abs(ln[0]-licenseMonthly(date))>1) issues.push('license off'); }
+  let discAmt=0;
+  if(reg!=null && date!=='?' && Math.abs(reg-base)>1){ issues.push('base off'); discAmt+=reg-base; }
+  if(licL && date!=='?'){ const ln=_nums(licL); if(ln.length && Math.abs(ln[0]-licenseMonthly(date))>1){ issues.push('license off'); discAmt+=ln[0]-licenseMonthly(date); } }
   if(c && Math.abs((gross-taxes-ded)-net)>0.02) issues.push('net mismatch');
-  if(date!=='?') lines.forEach(l=>{ const m=l.match(/^([A-Za-z()\/ ]+?)\s+\d{2}\/\d{2}\/\d{4}.*?(\d+\.\d{4})/); if(m){ const rt=parseFloat(m[2]); if(rt>10 && Math.abs(rt-hr)>0.02) issues.push(m[1].trim()+' rate'); } });
-  return {date, type, gross, net, ok:issues.length===0, issues};
+  if(date!=='?') lines.forEach(l=>{ const m=l.match(/^([A-Za-z()\/ ]+?)\s+\d{2}\/\d{2}\/\d{4}.*?(\d+\.\d{4})/); if(m){ const rt=parseFloat(m[2]); if(rt>10 && Math.abs(rt-hr)>0.02){ issues.push(m[1].trim()+' rate'); const ns=_nums(l); const amt=ns[ns.length-1], hrs=ns.length>=3?ns[1]:0; if(hrs>0&&amt>0) discAmt+=amt-(hr*hrs*(rt>hr*1.4?1.5:1)); } } });
+  const eff = gross>0 ? taxes/gross : 0;
+  return {date, type, gross, net, taxes, ded, fed, state, fica, trad, roth, hsa, loan, eff, discAmt:Math.round(discAmt*100)/100, ok:issues.length===0, issues};
 }
 function saveCheck(){
   runVerify();
@@ -466,15 +523,35 @@ function vTrack(){
     <div class="statusbig na"><span class="big">${fmt0(exp)}</span><span>is where your retirement total <b>should</b> be today to stay on plan.</span></div>
     <div class="grid" style="margin-top:12px">
       <div><label>Your actual retirement total</label><input type="number" id="actBal" step="100" value="${S.actualBalance||''}" placeholder="enter to compare"></div>
-      <div style="align-self:end"><button class="act" onclick="checkBal()">Check</button></div>
+      <div style="align-self:end" class="row"><button class="act" onclick="checkBal()">Check</button><a class="act ghost" href="https://nb.fidelity.com" target="_blank" rel="noopener" style="text-decoration:none;align-self:center">Fidelity login \u2197</a></div>
     </div>
     <div id="balres" style="margin-top:10px"></div>
   </div>
   <div class="card">
+    <h2>Backdoor / Mega-Backdoor Roth \u2014 tax benefit</h2>
+    <p class="muted">After-tax dollars converted to Roth grow tax-free forever. This shows what skipping tax on the growth is worth vs the same money in a taxable account.</p>
+    <div class="grid">
+      <div><label>After-tax \u2192 Roth per year</label><input type="number" id="bdrAmt" value="23000"></div>
+      <div><label>Years until retirement</label><input type="number" id="bdrYrs" value="${Math.max(1,retireYear()-new Date().getFullYear())}"></div>
+      <div><label>Return %</label><input type="number" step="0.5" id="bdrRet" value="${(S.annualReturn*100).toFixed(0)}"></div>
+      <div><label>Your marginal rate % (fed+IL)</label><input type="number" step="1" id="bdrMrate" value="24"></div>
+    </div>
+    <button class="act" style="margin-top:10px" onclick="bdrSim()">Simulate</button>
+    <div id="bdrRes" style="margin-top:10px"></div>
+  </div>
+  <div class="card">
     <h2>Year-to-date contribution pace</h2>
-    <p class="muted">Fraction of ${new Date().getFullYear()} elapsed \u00d7 annual target. Enter your YTD totals from the latest paystub.</p>
+    <p class="muted">Fraction of ${new Date().getFullYear()} elapsed \u00d7 annual target. Hover \u24d8 for the IRS limit. Edit targets and add accounts in Settings.</p>
     <table id="paceTbl"><tr><th>Account</th><th class="num">Annual target</th><th class="num">Should be YTD</th><th class="num">Your YTD</th><th>Status</th></tr></table>
   </div>`;
+}
+function bdrSim(){
+  const amt=val('bdrAmt'), yrs=Math.max(0,Math.round(val('bdrYrs'))), r=(val('bdrRet')/100)||0.07, mr=(val('bdrMrate')/100)||0.24;
+  let roth=0, tax=0;
+  for(let i=0;i<yrs;i++){ roth=(roth+amt)*(1+r); const base=tax+amt; tax=base+base*r*(1-mr); }
+  const saved=roth-tax, contributed=amt*yrs;
+  document.getElementById('bdrRes').innerHTML=`<div class="statusbig ok"><span class="big">${fmt0(saved)}</span><span>extra in your pocket vs a taxable account.</span></div>
+    <p class="muted" style="margin-top:8px">Contributing ${fmt0(amt)}/yr for ${yrs} yrs (${fmt0(contributed)} total): Roth grows tax-free to <b>${fmt0(roth)}</b>; the same in a taxable account, with growth taxed yearly at ${(mr*100).toFixed(0)}%, reaches only <b>${fmt0(tax)}</b>. Roth also has <b>no RMDs and tax-free withdrawals</b> in retirement.</p>`;
 }
 function checkBal(){
   const exp=expectedBalance(new Date().toISOString().slice(0,10));
@@ -485,16 +562,69 @@ function checkBal(){
 }
 function renderPace(){
   const y=new Date().getFullYear(); const frac=( (new Date()-new Date(y,0,1)) / (new Date(y+1,0,1)-new Date(y,0,1)) );
-  const sal=salaryYr(y);
-  const items=[['401(k) Trad (6%)',0.06*sal],['401(k) Roth (11%)',0.11*sal],['Employer (9%)',0.09*sal],
-    ['Roth IRA \u2013 Trenton',S.rothIRAannual],['HSA',(y>=S.hsaResumeYear?S.hsaAnnual:0)]];
+  const sal=salaryYr(y); const L=irs(y); const auto=(v,def)=>(v&&v>0)?v:def;
+  const items=[
+    ['401(k) Traditional', auto(S.tgtTrad, S.tradPct*sal), `Elective deferral limit (Trad + Roth combined): ${fmt0(L.deferral)} for ${y}${'\u002B'} ${fmt0(L.catch50)} catch-up at 50+`],
+    ['401(k) Roth', auto(S.tgtRoth, S.rothPct*sal), `Shares the ${fmt0(L.deferral)} elective-deferral limit with Traditional for ${y}`],
+    ['Employer (9%)', auto(S.tgtEmployer, 0.09*sal), `Employer money. Total additions (415c) limit: ${fmt0(L.dc415)} for ${y}`],
+    ['Roth IRA \u2013 Trenton', S.rothIRAannual, `IRA contribution limit: ${fmt0(L.ira)} for ${y}`],
+    ['HSA', (y>=S.hsaResumeYear?S.hsaAnnual:0), `HSA limit ${y}: ${fmt0(L.hsaFamily)} family / ${fmt0(L.hsaSelf)} self-only`],
+    ...(S.retAccounts||[]).map(a=>[a.name, +a.annual||0, 'Custom account (set in Settings)'])
+  ];
   let h='<tr><th>Account</th><th class="num">Annual target</th><th class="num">Should be YTD</th><th class="num">Your YTD</th><th>Status</th></tr>';
   items.forEach((it,i)=>{ const shouldBe=it[1]*frac;
-    h+=`<tr><td>${it[0]}</td><td class="num">${fmt0(it[1])}</td><td class="num">${fmt0(shouldBe)}</td><td class="num"><input data-i="${i}" data-t="${shouldBe}" oninput="paceStat(this)" type="number" style="width:110px;padding:4px" placeholder="0"></td><td id="ps${i}"><span class="pill na">\u2013</span></td></tr>`; });
+    h+=`<tr><td>${it[0]} <span title="${it[2]}" style="cursor:help;color:#2563eb">\u24d8</span></td><td class="num">${fmt0(it[1])}</td><td class="num">${fmt0(shouldBe)}</td><td class="num"><input data-i="${i}" data-t="${shouldBe}" oninput="paceStat(this)" type="number" style="width:110px;padding:4px" placeholder="0"></td><td id="ps${i}"><span class="pill na">\u2013</span></td></tr>`; });
   document.getElementById('paceTbl').innerHTML=h;
 }
 function paceStat(el){ const a=parseFloat(el.value)||0,t=parseFloat(el.dataset.t); const ok=a>=t*0.97;
   document.getElementById('ps'+el.dataset.i).innerHTML = a===0?'<span class="pill na">\u2013</span>':`<span class="pill ${ok?'ok':'no'}">${ok?'\u2713 on pace':'\u2717 behind'}</span>`; }
+
+/* ---------- TAX ---------- */
+let taxIdx=0;
+function taxPick(i){ taxIdx=+i; render(); }
+function vTax(){
+  if(!S.history.length) return '<div class="card"><h2>Tax</h2><p class="muted">Add a paycheck on the Paycheck tab first \u2014 the tax view reads your stored stubs.</p></div>';
+  const hs=S.history; if(taxIdx>=hs.length)taxIdx=0; const h=hs[taxIdx];
+  const y=new Date(h.date).getFullYear(); const L=irs(y);
+  const eff=h.gross? (h.taxes||0)/h.gross : 0;
+  const big=h.type==='big'; const normal=perCheckBase(h.date)+(big?licenseMonthly(h.date):0);
+  const extra=Math.max(0,(h.gross||0)-normal);                 // OT/shift/other earnings this check
+  const yChecks=hs.filter(x=>new Date(x.date).getFullYear()===y);
+  const n=yChecks.length||1; const frac=Math.max(n/24,0.04);
+  const sum=k=>yChecks.reduce((s,x)=>s+(x[k]||0),0);
+  const annGross=sum('gross')/frac, annPretax=(sum('trad')+sum('hsa'))/frac;
+  const baseAnnual=monthlyBase(h.date)*12+licenseMonthly(h.date)*12;
+  const taxable=Math.max(0,annGross-annPretax-stdMFJ(y)), baseTaxable=Math.max(0,baseAnnual-annPretax-stdMFJ(y));
+  const mFed=fedMarginal(taxable,y), mAll=mFed+IL_RATE+FICA_RATE, creep=mFed>fedMarginal(baseTaxable,y);
+  const loss=extra*mAll, keep=extra-loss;
+  const estFedTax=fedTax(taxable,y), estFedWH=sum('fed')/frac, whDiff=estFedWH-estFedTax;
+  const sel=hs.map((x,i)=>`<option value="${i}" ${i===taxIdx?'selected':''}>${x.date} (${x.type})</option>`).join('');
+  let html=`<div class="card"><h2>Effective tax rate</h2>
+    <div class="row" style="margin-bottom:8px"><label style="margin-right:8px">Paycheck:</label><select onchange="taxPick(this.value)" style="padding:6px">${sel}</select></div>
+    <div class="statusbig na"><span class="big">${(eff*100).toFixed(1)}%</span><span>of gross went to taxes on this check (${fmt(h.taxes||0)} of ${fmt(h.gross||0)}).</span></div>
+    <table style="margin-top:10px"><tr><th>Component</th><th class="num">Amount</th><th class="num">% of gross</th></tr>
+      <tr><td>Federal income tax</td><td class="num">${fmt(h.fed||0)}</td><td class="num">${h.gross?((h.fed||0)/h.gross*100).toFixed(1):'0'}%</td></tr>
+      <tr><td>State (IL 4.95%)</td><td class="num">${fmt(h.state||0)}</td><td class="num">${h.gross?((h.state||0)/h.gross*100).toFixed(1):'0'}%</td></tr>
+      <tr><td>FICA (SS+Medicare)</td><td class="num">${fmt(h.fica||0)}</td><td class="num">${h.gross?((h.fica||0)/h.gross*100).toFixed(1):'0'}%</td></tr>
+      <tr><th>Total taxes</th><th class="num">${fmt(h.taxes||0)}</th><th class="num">${(eff*100).toFixed(1)}%</th></tr></table>
+    <p class="hint" style="margin-top:6px">Federal/state/FICA split is best-effort from the stub\u2019s labels; total is exact.</p></div>`;
+  html+=`<div class="card" style="${creep&&extra>0?'border-color:#b02a37':''}"><h2>Overtime / extra-earnings tax bite${creep&&extra>0?' <span class="pill no">higher bracket</span>':''}</h2>`;
+  if(extra>0.5){ html+=`<p class="muted">This ${h.type} check had about <b>${fmt(extra)}</b> in earnings above your normal base${big?'+license':''} (overtime, shift, premiums).</p>
+    <div class="statusbig ${creep?'no':'na'}"><span class="big">\u2212${fmt0(loss)}</span><span>of that ${fmt0(extra)} goes to taxes at your ~${(mAll*100).toFixed(0)}% marginal rate (fed ${(mFed*100).toFixed(0)}% + IL 4.95% + FICA 7.65%). You keep about <b>${fmt0(keep)}</b>.</span></div>
+    <p class="muted" style="margin-top:8px">In plain terms: <b>${fmt0(extra)} of overtime/extra \u2192 you actually pocket ${fmt0(keep)}; ${fmt0(loss)} went to the government.</b> ${creep?'<b style="color:#b02a37">This extra income pushed your annualized earnings into a higher federal bracket ('+(mFed*100).toFixed(0)+'%), so it\u2019s taxed harder than your base pay.</b>':'This is your normal marginal rate \u2014 no bracket jump.'}</p>`;
+  } else { html+='<p class="muted">No overtime or extra earnings detected on this check \u2014 nothing taxed above your base rate.</p>'; }
+  html+='</div>';
+  html+=`<div class="card" style="${Math.abs(whDiff)>1500?(whDiff<0?'border-color:#b02a37':'border-color:#1a7f37'):''}"><h2>${y} withholding check</h2>
+    <p class="muted">Rough projection from your ${n} stored ${y} check(s), annualized. Assumes MFJ, standard deduction ${fmt0(stdMFJ(y))}, pre-tax 401(k)+HSA removed. Estimate only \u2014 not tax advice.</p>
+    <table><tr><td>Projected annual gross</td><td class="num">${fmt0(annGross)}</td></tr>
+      <tr><td>\u2212 pre-tax 401(k)+HSA</td><td class="num">${fmt0(annPretax)}</td></tr>
+      <tr><td>\u2212 standard deduction</td><td class="num">${fmt0(stdMFJ(y))}</td></tr>
+      <tr><th>Est. taxable income</th><th class="num">${fmt0(taxable)}</th></tr>
+      <tr><td>Est. federal tax owed</td><td class="num">${fmt0(estFedTax)}</td></tr>
+      <tr><td>Projected federal withheld</td><td class="num">${fmt0(estFedWH)}</td></tr></table>
+    <div class="statusbig ${whDiff<-1500?'no':whDiff>1500?'ok':'na'}" style="margin-top:10px"><span class="big">${whDiff>=0?'+':'\u2212'}${fmt0(Math.abs(whDiff))}</span><span>${whDiff>=0?'projected federal refund \u2014 you\u2019re <b>over-withholding</b> (an interest-free loan to the IRS).':'projected balance <b>due</b> \u2014 you\u2019re <b>under-withholding</b>; consider adjusting your W-4.'}</span></div></div>`;
+  return html;
+}
 
 /* ---------- BUDGET ---------- */
 function vBudget(){
@@ -518,13 +648,16 @@ function vBudget(){
     <table>${rows}<tr><th>Total outflow</th><th class="num">${fmt(out)}</th><th></th></tr></table>
     <button class="act ghost" style="margin-top:8px" onclick="budAdd()">+ Add line</button>
   </div>
-  <div class="card" style="border-color:var(--good)"><h2>Import spending (Rocket Money CSV)</h2>
-    <input type="file" id="csvfile" accept=".csv,text/csv" onchange="importBudgetCSV(event)">
-    <div id="csvstatus" class="hint" style="margin-top:6px">Export your transactions from Rocket Money (CSV), then pick the file here. It\u2019s parsed in your browser \u2014 nothing is uploaded.</div>
-    ${S.imported?`<table style="margin-top:10px"><tr><th>Category (recent avg)</th><th class="num">$/mo</th></tr>${Object.entries(S.imported).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${k}</td><td class="num">${fmt(v)}</td></tr>`).join('')}<tr><th>Imported total</th><th class="num">${fmt(Object.values(S.imported).reduce((s,v)=>s+v,0))}</th></tr></table>
+  <div class="card" style="border-color:var(--good)"><h2>Import spending (Rocket Money)</h2>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+      <label class="act" style="cursor:pointer">Import Rocket Money CSV<input type="file" id="csvfile" accept=".csv,text/csv" onchange="importBudgetCSV(event)" style="display:none"></label>
+      <a class="act ghost" href="https://app.rocketmoney.com" target="_blank" rel="noopener" style="text-decoration:none">Open Rocket Money \u2197</a>
+    </div>
+    <div id="csvstatus" class="hint" style="margin-top:6px">Export transactions from Rocket Money (CSV), then import here \u2014 it parses in your browser and <b>auto-creates your budget categories</b>. Nothing is uploaded.</div>
+    ${S.imported?`<table style="margin-top:10px"><tr><th>Category (avg)</th><th class="num">$/mo</th></tr>${Object.entries(S.imported).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${k}</td><td class="num">${fmt(v)}</td></tr>`).join('')}<tr><th>Imported total</th><th class="num">${fmt(Object.values(S.imported).reduce((s,v)=>s+v,0))}</th></tr></table>
     ${S.importedMeta&&S.importedMeta.interest>1?`<div class="banner" style="margin-top:8px"><b>Credit-card interest ~${fmt(S.importedMeta.interest)}/mo</b> in this data \u2014 attack the balance first.</div>`:''}
-    <button class="act" style="margin-top:8px" onclick="applyImported()">Apply to my budget (replace discretionary)</button>
-    <div class="hint" style="margin-top:4px">Keeps housing, loans, utilities, insurance & savings; replaces discretionary lines with these. Auto line includes Tesla insurance.</div>`:''}
+    <button class="act ghost" style="margin-top:8px" onclick="applyImported()">Re-apply to budget</button>
+    <div class="hint" style="margin-top:4px">Auto-applied on import: keeps housing, loans, utilities, insurance & savings; replaces discretionary lines with these.</div>`:''}
   </div>
   <div class="card"><div class="statusbig ${net>=0?'ok':'no'}"><span class="big">${net>=0?'+':''}${fmt(net)}</span><span>${net>=0?'monthly surplus':'monthly gap \u2014 trim discretionary + overtime'}</span></div></div>`;
 }
@@ -555,8 +688,9 @@ async function importBudgetCSV(ev){
     const agg={};
     rec.forEach(d=>{ if(d.amt<=0||excl.has(d.cat)||rentRe.test(d.name))return; const k=d.cat||'Uncategorized'; agg[k]=(agg[k]||0)+d.amt; });
     Object.keys(agg).forEach(k=>agg[k]=Math.round(agg[k]/months));
-    S.imported=agg; S.importedMeta={months,count:rec.length,interest:Math.round(interest)}; save(); render();
-    document.getElementById('csvstatus').innerHTML=`\u2713 ${rec.length} transactions over ~${months} months \u2014 averaged into your categories.`;
+    S.imported=agg; S.importedMeta={months,count:rec.length,interest:Math.round(interest)}; save();
+    applyImported();   // auto-create/refresh budget categories
+    const st2=document.getElementById('csvstatus'); if(st2) st2.innerHTML=`\u2713 ${rec.length} transactions over ~${months} months \u2014 auto-applied to your budget.`;
   }catch(e){ st.textContent='Could not read CSV \u2014 '+e.message; }
 }
 function applyImported(){
@@ -573,16 +707,47 @@ function budAdd(){S.budget.push(['New line',0]);save();render();}
 function jhanNet(v){S.jhanNetMonthly=parseFloat(v)||0;save();render();}
 
 /* ---------- HISTORY ---------- */
+let qAll=false; const qSel=new Set();
+function qToggleAll(){ qAll=!qAll; render(); }
+function qSelToggle(date,ck){ if(ck)qSel.add(date); else qSel.delete(date); }
+function qSelAll(ck){ S.history.forEach(h=>{ if(ck)qSel.add(h.date); else qSel.delete(h.date); }); render(); }
+function discCell(d){ d=d||0; const c=d<-0.5?'#b02a37':d>0.5?'#1a7f37':'#64748b'; return `<span style="color:${c};font-weight:600">${d>0.5?'+':''}${fmt(d)}</span>`; }
+function exportQueueCSV(){ if(!S.history.length){ alert('Queue is empty.'); return; }
+  const head=['Pay end','Type','Gross','Net','Taxes','Federal','State (IL)','FICA','401k Trad','401k Roth','HSA','401k Loan','Eff tax %','Discrepancy','Status','Passed'];
+  const cols=['date','type','gross','net','taxes','fed','state','fica','trad','roth','hsa','loan','eff','discAmt','status','ok'];
+  const esc=v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const rows=S.history.map(h=>cols.map(c=> c==='eff'?(((h.eff||0)*100).toFixed(2)) : c==='ok'?(h.ok?'Y':'N') : (h[c]==null?'':h[c]) ).map(esc).join(','));
+  const csv=[head.map(esc).join(','),...rows].join('\r\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}); const u=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=u; a.download='pay-queue.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),5000); }
+function emailToCompany(){
+  let rows=S.history.filter(h=>qSel.has(h.date)); if(!rows.length) rows=S.history.filter(h=>h.ok===false);
+  if(!rows.length){ alert('Tick one or more paychecks first (or none were flagged with an issue).'); return; }
+  const li=rows.map(h=>{ const a=h.discAmt||0; const dir=a<-0.5?`I appear to be shorted ${fmt(-a)}`:a>0.5?`I appear to be overpaid ${fmt(a)}`:'there is a discrepancy';
+    const what=(h.issues&&h.issues.length)?h.issues.join('; '):'pay does not match the contract'; return `\u2022 Pay end ${h.date} (${h.type} check): ${what} \u2014 ${dir}.`; });
+  const body=`Hello,\n\nI am requesting review and correction of the following paycheck(s), where my pay does not appear to match the PAFCA collective bargaining agreement:\n\n${li.join('\n')}\n\nRequested resolution: please review each item against the contract pay scale, dispatcher license premium, shift differential, and overtime rates, and issue any back pay owed on the next available pay cycle. I can provide the corresponding paystub PDFs on request.\n\nThank you,\nTrenton Gordon\nFlight Dispatcher (PAFCA)`;
+  const subj=`Paycheck discrepancy \u2014 pay end ${rows.map(h=>h.date).join(', ')}`;
+  window.location.href='mailto:?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);
+}
 function vHistory(){
   const newCount=S.history.filter(h=>h.status!=='reviewed').length;
   const top=`<div class="card"><h2>Queue${newCount?` <span class="pill no" style="font-size:12px">${newCount} New</span>`:''}</h2>
-    <p class="muted">Paychecks land here automatically. Batch uploads and folder imports arrive as <b>New</b>; opening one to review (or importing a single) marks it <b>Reviewed</b>.</p>
-    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="act ghost" onclick="importFromFolder()">Import new from folder</button><button class="act ghost" onclick="connectFolder()">Connect PDF folder</button></div></div>`;
+    <p class="muted">Paychecks land here automatically. Batch/folder imports arrive as <b>New</b>; opening one (or importing a single) marks it <b>Reviewed</b>.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button class="act ghost" onclick="qToggleAll()">${qAll?'Hide extra info':'See all info'}</button>
+      <button class="act ghost" onclick="exportQueueCSV()">Export to Excel</button>
+      <button class="act" onclick="emailToCompany()">Email to company</button>
+      <button class="act ghost" onclick="importFromFolder()">Import from folder</button>
+      <button class="act ghost" onclick="connectFolder()">Connect PDF folder</button>
+    </div>
+    <p class="hint" style="margin-top:6px">Tick rows then <b>Email to company</b> to draft a correction request (recipient left blank). <b>Export to Excel</b> downloads the whole queue.</p></div>`;
   if(!S.history.length) return top+'<div class="card"><p class="muted">No paychecks yet. Upload one on the Paycheck tab, drop several in Batch, or connect your PDF folder above.</p></div>';
+  const extraHead = qAll ? '<th class="num">Taxes</th><th class="num">Fed</th><th class="num">State</th><th class="num">FICA</th><th class="num">Trad</th><th class="num">Roth</th><th class="num">HSA</th><th class="num">Loan</th><th class="num">Eff%</th>' : '';
   let rows=S.history.map((h,i)=>{ const isNew=h.status!=='reviewed';
-    return `<tr style="${isNew?'background:rgba(225,29,72,.06)':''}"><td>${h.date}</td><td>${h.type||'\u2014'}</td><td class="num">${fmt(h.gross)}</td><td class="num">${fmt(h.net)}</td><td>${h.ok===true?'<span class="pill ok">\u2713</span>':h.ok===false?'<span class="pill no">\u2717</span>':''}</td><td><span class="pill ${isNew?'no':'ok'}">${isNew?'New':'Reviewed'}</span></td><td>${h.pdfId?`<button class="act ghost" style="padding:3px 6px" onclick="reviewPdf('${h.pdfId}')">View</button> <button class="act ghost" style="padding:3px 6px" onclick="downloadPdf('${h.pdfId}','${h.date}')">Save</button>`:'\u2014'}</td><td>${isNew?`<button class="act ghost" style="padding:3px 6px" onclick="markReviewed(${i})">\u2713</button> `:''}<button class="act ghost" style="padding:3px 8px" onclick="histDel(${i})">\u2715</button></td></tr>`; }).join('');
-  return top+`<div class="card"><table><tr><th>Date</th><th>Type</th><th class="num">Gross</th><th class="num">Net</th><th>Check</th><th>Status</th><th>PDF</th><th></th></tr>${rows}</table>
-  <p class="muted" style="margin-top:8px"><b>View</b> opens the single review with problems circled (and marks it Reviewed). <b>Save</b> downloads it named <code>paystub-(pay date).pdf</code>.</p>
+    const extra = qAll ? `<td class="num">${fmt(h.taxes||0)}</td><td class="num">${fmt(h.fed||0)}</td><td class="num">${fmt(h.state||0)}</td><td class="num">${fmt(h.fica||0)}</td><td class="num">${fmt(h.trad||0)}</td><td class="num">${fmt(h.roth||0)}</td><td class="num">${fmt(h.hsa||0)}</td><td class="num">${fmt(h.loan||0)}</td><td class="num">${((h.eff||0)*100).toFixed(1)}%</td>` : '';
+    return `<tr style="${isNew?'background:rgba(225,29,72,.06)':''}"><td><input type="checkbox" ${qSel.has(h.date)?'checked':''} onclick="qSelToggle('${h.date}',this.checked)"></td><td>${h.date}</td><td>${h.type||'\u2014'}</td><td class="num">${fmt(h.gross)}</td><td class="num">${fmt(h.net)}</td><td class="num">${discCell(h.discAmt)}</td><td>${h.ok===true?'<span class="pill ok">\u2713</span>':h.ok===false?'<span class="pill no">\u2717</span>':''}</td><td><span class="pill ${isNew?'no':'ok'}">${isNew?'New':'Reviewed'}</span></td>${extra}<td>${h.pdfId?`<button class="act ghost" style="padding:3px 6px" onclick="reviewPdf('${h.pdfId}')">View</button> <button class="act ghost" style="padding:3px 6px" onclick="downloadPdf('${h.pdfId}','${h.date}')">Save</button>`:'\u2014'}</td><td>${isNew?`<button class="act ghost" style="padding:3px 6px" onclick="markReviewed(${i})">\u2713</button> `:''}<button class="act ghost" style="padding:3px 8px" onclick="histDel(${i})">\u2715</button></td></tr>`; }).join('');
+  return top+`<div class="card" style="overflow-x:auto"><table><tr><th><input type="checkbox" onclick="qSelAll(this.checked)"></th><th>Date</th><th>Type</th><th class="num">Gross</th><th class="num">Net</th><th class="num">Disc.</th><th>Check</th><th>Status</th>${extraHead}<th>PDF</th><th></th></tr>${rows}</table>
+  <p class="muted" style="margin-top:8px"><b>Disc.</b> = discrepancy vs contract (+ overpaid / \u2212 shorted). <b>View</b> opens the circled review. <b>Save</b> downloads <code>paystub-(date).pdf</code>.</p>
   <button class="act ghost" style="margin-top:6px" onclick="exportAllPdfs()">Export all paystubs to a folder</button></div>`;
 }
 function markReviewed(i){ if(S.history[i]){ S.history[i].status='reviewed'; save(); render(); } }
@@ -590,28 +755,126 @@ function histDel(i){ const h=S.history[i]; if(h&&h.pdfId)idbDel(h.pdfId); S.hist
 
 /* ---------- SETTINGS ---------- */
 function vSettings(){
-  return `<div class="card"><h2>Settings</h2><div class="grid">
+  const q=S.quals||{}, R=S.premRates||{}; const cy=new Date().getFullYear(); const L=irs(cy);
+  return `<div class="card"><h2>Settings</h2><p class="muted">Grouped by the tab each setting affects.</p></div>
+
+  <div class="card"><h2>\u2699\ufe0f Paycheck</h2><div class="grid">
     <div><label>Hire/anniversary date</label><input type="date" id="s_hire" value="${S.hireDate}"></div>
-    <div><label>Annual return assumption</label><input type="number" step="0.005" id="s_ret" value="${S.annualReturn}"></div>
-    <div><label>Retirement age (affects On Track)</label><input type="number" id="s_rage" value="${S.retireAge||55}"><div class="hint">e.g. 45, 55, 65</div></div>
+    <div><label>Base pay scale</label><select id="s_scale"><option value="standard" ${S.baseScale!=='premium'?'selected':''}>Domestic Dispatcher (standard)</option><option value="premium" ${S.baseScale==='premium'?'selected':''}>Chief / OM / ATC Coord / FT Instructor</option></select><div class="hint">Premium-desk roles are paid on a higher scale, not a bonus.</div></div>
+    <div><label>401(k) Traditional election %</label><input type="number" step="0.01" id="s_trad" value="${S.tradPct}"><div class="hint">0.06 = 6%</div></div>
+    <div><label>401(k) Roth election %</label><input type="number" step="0.01" id="s_roth" value="${S.rothPct}"><div class="hint">0.11 = 11%</div></div>
+  </div>
+  <h2 style="margin-top:14px">Special qualifications (monthly premiums, 13-A)</h2>
+  <p class="muted">Domestic is always the base. Tick what you hold \u2014 these stack on top, on your big check.</p>
+  <div class="grid">
+    <div><label>International area qualifications (#)</label><input type="number" id="s_intl" value="${q.intlAreas||0}"><div class="hint">${fmt0(R.intlFirst)} first area + ${fmt0(R.intlAddl)} each more, cap ${fmt0(R.intlCap)}</div></div>
+    <div><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="s_ifs" ${q.ifs?'checked':''}> IFS qualification (${fmt0(R.ifs)}/mo)</label></div>
+    <div><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="s_lca" ${q.lca?'checked':''}> LCA qualification (${fmt0(R.lca)}/mo)</label></div>
+    <div><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="s_wbom" ${q.wbom?'checked':''}> Widebody OM (${fmt0(R.wbom)}/mo)</label></div>
+  </div>
+  <p class="hint">Current qualification premium: <b>${fmt0(qualPremiumMonthly())}/mo</b>${qualBreakdown()?' \u2014 '+qualBreakdown():''}. Verified against your big check.</p></div>
+
+  <div class="card"><h2>\ud83d\udcc8 Retirement</h2><div class="grid">
+    <div><label>Retirement age</label><input type="number" id="s_rage" value="${S.retireAge||55}"></div>
     <div><label>Birth year</label><input type="number" id="s_by" value="${S.birthYear||1990}"></div>
+    <div><label>Annual return assumption</label><input type="number" step="0.005" id="s_ret" value="${S.annualReturn}"></div>
     <div><label>Starting retirement balance</label><input type="number" id="s_sb" value="${S.startBalance}"></div>
     <div><label>As of date</label><input type="date" id="s_sbd" value="${S.startBalanceDate}"></div>
     <div><label>Jhan invests / yr (timeline)</label><input type="number" id="s_ji" value="${S.jhanInvestAnnual}"></div>
-    <div><label>Jhan take-home / mo (budget)</label><input type="number" id="s_jn" value="${S.jhanNetMonthly}"></div>
-    <div><label>Roth IRA target / yr</label><input type="number" id="s_ira" value="${S.rothIRAannual}"></div>
+    <div><label>Roth IRA target / yr</label><input type="number" id="s_ira" value="${S.rothIRAannual}"><div class="hint">IRS IRA limit ${cy}: ${fmt0(L.ira)}</div></div>
+    <div><label>HSA target / yr</label><input type="number" id="s_hsa" value="${S.hsaAnnual}"><div class="hint">HSA family ${cy}: ${fmt0(L.hsaFamily)}</div></div>
     <div><label>HSA resume year</label><input type="number" id="s_hsay" value="${S.hsaResumeYear}"></div>
-    <div><label>401(k) Traditional election %</label><input type="number" step="0.01" id="s_trad" value="${S.tradPct}"><div class="hint">e.g. 0.06 = 6%</div></div>
-    <div><label>401(k) Roth election %</label><input type="number" step="0.01" id="s_roth" value="${S.rothPct}"><div class="hint">e.g. 0.11 = 11% (0 if not enrolled)</div></div>
+    <div><label>401(k) Trad target / yr ($, 0=auto)</label><input type="number" id="s_ttrad" value="${S.tgtTrad||0}"></div>
+    <div><label>401(k) Roth target / yr ($, 0=auto)</label><input type="number" id="s_troth" value="${S.tgtRoth||0}"></div>
+    <div><label>Employer target / yr ($, 0=auto)</label><input type="number" id="s_temp" value="${S.tgtEmployer||0}"></div>
   </div>
-  <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap"><button class="act" onclick="saveSettings()">Save settings</button>
-  <button class="act ghost" onclick="exportData()">Export data file</button>
-  <label class="act ghost" style="cursor:pointer">Import data file<input type="file" accept="application/json,.json" onchange="importData(event)" style="display:none"></label>
-  <button class="act ghost" onclick="if(confirm('Erase all saved data in this browser?')){localStorage.removeItem('dispatchPay');S=load();render();}">Reset all data</button></div>
-  <p class="muted" style="margin-top:10px">Shared data (for now): tap <b>Export data file</b>, save it into a synced folder (iCloud Drive, Google Drive, Dropbox). On the other person\u2019s device, open the app and <b>Import data file</b>. PDFs sync via the <b>Connect PDF folder</b> button on the Queue tab if that folder is in the same synced location.</p>
-  <p class="muted" style="margin-top:10px">To update the pay chart after a new contract: edit the CHART object at the top of index.html and add a new effective-date column.</p>
+  <h2 style="margin-top:14px">Extra retirement accounts</h2>
+  <table><tr><th>Account</th><th class="num">Annual target</th><th></th></tr>
+  ${(S.retAccounts||[]).map((a,i)=>`<tr><td><input value="${a.name}" onchange="acctField(${i},'name',this.value)" style="padding:3px;width:150px"></td><td class="num"><input type="number" value="${a.annual||0}" onchange="acctField(${i},'annual',this.value)" style="width:110px;padding:3px"></td><td><button class="act ghost" style="padding:3px 8px" onclick="acctDel(${i})">\u2715</button></td></tr>`).join('')}
+  </table><button class="act ghost" style="margin-top:6px" onclick="acctAdd()">+ Add account</button></div>
+
+  <div class="card"><h2>\ud83e\uddfe Tax</h2><p class="muted">Filing status: Married Filing Jointly. Federal brackets &amp; standard deduction for ${cy}: ${fmt0(stdMFJ(cy))} std deduction, top loaded bracket ${ (fedMarginal(9e9,cy)*100) }%. Tables run through ${Math.max(...taxYears())} and hold the latest year beyond that. Edit them under Advanced.</p></div>
+
+  <div class="card"><h2>\ud83d\udcb0 Budget</h2><div class="grid">
+    <div><label>Jhan take-home / mo</label><input type="number" id="s_jn" value="${S.jhanNetMonthly}"></div>
+  </div></div>
+
+  <div class="card"><h2>\ud83d\udcc4 Queue / PDFs</h2>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="act ghost" onclick="connectFolder()">Connect PDF folder</button><button class="act ghost" onclick="importFromFolder()">Import from folder</button><button class="act ghost" onclick="exportAllPdfs()">Export all paystubs</button></div></div>
+
+  <div class="card"><h2>\ud83d\udcbe Data (sharing)</h2>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="act ghost" onclick="exportData()">Export data file</button>
+    <label class="act ghost" style="cursor:pointer">Import data file<input type="file" accept="application/json,.json" onchange="importData(event)" style="display:none"></label>
+    <button class="act ghost" onclick="if(confirm('Erase all saved data in this browser?')){localStorage.removeItem('dispatchPay');S=load();render();}">Reset all data</button></div>
+    <p class="muted" style="margin-top:8px">Save the data file in a synced folder (iCloud/Drive) and Import it on the other device to share numbers.</p></div>
+
+  <div class="card"><div class="row" style="gap:8px;flex-wrap:wrap"><button class="act" onclick="saveSettings()">Save settings</button>
+    <button class="act ghost" onclick="advToggle()">${advOpen?'Hide':'Show'} Advanced settings</button></div>
+    ${advOpen?advSettings():''}
   </div>`;
 }
+let advOpen=false; function advToggle(){ advOpen=!advOpen; render(); }
+function advSettings(){ const R=S.premRates||{};
+  return `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+    <h2>Advanced settings</h2>
+    <p class="muted">Only edit if the contract or tax law changes. Wrong values here change every calculation.</p>
+    <h2 style="margin-top:12px;font-size:15px">Qualification premium rates (contract 13-A)</h2>
+    <div class="grid">
+      <div><label>Intl \u2014 first area</label><input type="number" id="a_if" value="${R.intlFirst}"></div>
+      <div><label>Intl \u2014 each additional</label><input type="number" id="a_ia" value="${R.intlAddl}"></div>
+      <div><label>Intl \u2014 monthly cap</label><input type="number" id="a_ic" value="${R.intlCap}"></div>
+      <div><label>IFS / month</label><input type="number" id="a_ifs" value="${R.ifs}"></div>
+      <div><label>LCA / month</label><input type="number" id="a_lca" value="${R.lca}"></div>
+      <div><label>Widebody OM / month</label><input type="number" id="a_wbom" value="${R.wbom}"></div>
+    </div>
+    <button class="act ghost" style="margin-top:8px" onclick="advSavePrem()">Save premium rates</button>
+    <h2 style="margin-top:14px;font-size:15px">Pay charts (monthly base by step)</h2>
+    <p class="muted">JSON: keys are effective-date columns, arrays are steps 0\u201310. Leave blank to use the built-in contract values.</p>
+    <label>Standard (Domestic) scale override</label>
+    <textarea id="a_chart" style="width:100%;height:80px;font-family:monospace;font-size:12px">${S.chartOverride?JSON.stringify(S.chartOverride):''}</textarea>
+    <label>Premium (Chief/OM/ATC/FTI) scale override</label>
+    <textarea id="a_chartp" style="width:100%;height:80px;font-family:monospace;font-size:12px">${S.chartPremiumOverride?JSON.stringify(S.chartPremiumOverride):''}</textarea>
+    <button class="act ghost" style="margin-top:8px" onclick="advSaveCharts()">Save pay charts</button>
+    <h2 style="margin-top:14px;font-size:15px">Federal tax tables (MFJ)</h2>
+    <p class="muted">JSON by year: {"2027":{"std":NNNNN,"brackets":[[cap,rate],...]}}. The app uses the matching year, or holds the latest year for future years.</p>
+    <textarea id="a_tax" style="width:100%;height:110px;font-family:monospace;font-size:12px">${JSON.stringify(S.taxOverride||TAX_TABLE,null,0)}</textarea>
+    <button class="act ghost" style="margin-top:8px" onclick="advSaveTax()">Save tax tables</button>
+    <h2 style="margin-top:14px;font-size:15px">Load a new contract</h2>
+    <p class="muted">Upload a new PAFCA agreement PDF. The app extracts the salary tables in your browser and shows what it found so you can apply them. For anything it can\u2019t read cleanly, use <b>Export contract text</b> and paste it to Claude to generate the JSON above.</p>
+    <input type="file" id="a_contract" accept="application/pdf" onchange="parseContract(event)">
+    <div id="a_contractres" class="hint" style="margin-top:6px"></div>
+  </div>`;
+}
+function advSavePrem(){ S.premRates={ intlFirst:+val('a_if')||0, intlAddl:+val('a_ia')||0, intlCap:+val('a_ic')||0, ifs:+val('a_ifs')||0, lca:+val('a_lca')||0, wbom:+val('a_wbom')||0 }; save(); alert('Premium rates saved.'); render(); }
+function advSaveCharts(){ try{ const c=document.getElementById('a_chart').value.trim(), p=document.getElementById('a_chartp').value.trim();
+  S.chartOverride=c?JSON.parse(c):null; S.chartPremiumOverride=p?JSON.parse(p):null; save(); alert('Pay charts saved.'); }catch(e){ alert('Invalid JSON: '+e.message); } }
+function advSaveTax(){ try{ const t=document.getElementById('a_tax').value.trim(); S.taxOverride=t?JSON.parse(t):null; save(); alert('Tax tables saved.'); }catch(e){ alert('Invalid JSON: '+e.message); } }
+async function parseContract(ev){ const f=ev.target.files[0]; if(!f)return; const st=document.getElementById('a_contractres'); st.textContent='Reading contract\u2026 (large files take a moment)';
+  try{ const lines=await fileToLines(f); const blob=lines.join('\n');
+    window.__contractText=blob;
+    // best-effort: rows like "0 $ 7,161 $ 7,711 $ 8,073" \u2014 step then 3 monthly figures
+    const rowRe=/(?:^|\n)\s*(\d{1,2})\s+\$\s*([\d,]+)\s+\$\s*([\d,]+)\s+\$\s*([\d,]+)/g;
+    const clean=s=>parseInt(String(s).replace(/[^\d]/g,''),10);
+    const found=[]; let m; while((m=rowRe.exec(blob))){ const step=+m[1]; const a=clean(m[2]),b=clean(m[3]),c=clean(m[4]);
+      if(step>=0&&step<=10&&a>4000&&a<30000&&c>4000&&c<30000) found.push([step,a,b,c]); }
+    if(!found.length){ st.innerHTML='Couldn\u2019t auto-read the tables. Use <b>Export contract text</b> below and paste it to Claude.<br><button class="act ghost" style="margin-top:6px" onclick="exportContractText()">Export contract text</button>'; return; }
+    st.innerHTML=`Found ${found.length} salary rows. First/last column become effective-date columns. Review then apply:<br><pre style="font-size:11px;overflow:auto;max-height:160px">${found.map(r=>r.join('  ')).join('\n')}</pre>
+      <button class="act" style="margin-top:6px" onclick="applyContract()">Apply as Standard scale</button>
+      <button class="act ghost" style="margin-top:6px" onclick="applyContract(true)">Apply as Premium scale</button>
+      <button class="act ghost" style="margin-top:6px" onclick="exportContractText()">Export contract text</button>`;
+    window.__contractRows=found;
+  }catch(e){ st.textContent='Could not read this PDF: '+e.message; }
+}
+function applyContract(premium){ const f=window.__contractRows; if(!f||!f.length){ alert('Parse a contract first.'); return; }
+  // take first 11 unique steps 0..10
+  const by={}; f.forEach(r=>{ if(by[r[0]]===undefined) by[r[0]]=r; });
+  const col=(k)=>Array.from({length:11},(_,s)=> (by[s]?by[s][k]:0));
+  const obj={}; const yrs=['2022','2023','2024']; for(let k=1;k<=3;k++) obj[yrs[k-1]]=col(k);
+  if(premium) S.chartPremiumOverride=obj; else S.chartOverride=obj; save();
+  alert('Applied. Confirm the numbers look right on the Paycheck tab; you can fine-tune the JSON in Advanced.'); render();
+}
+function exportContractText(){ const t=window.__contractText||''; if(!t){ alert('Parse a contract first.'); return; }
+  const blob=new Blob([t],{type:'text/plain'}); const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download='contract-text.txt'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),5000); }
 function saveSettings(){
   S.hireDate=document.getElementById('s_hire').value; S.annualReturn=parseFloat(document.getElementById('s_ret').value)||0.07;
   S.retireAge=parseInt(document.getElementById('s_rage').value)||55; S.birthYear=parseInt(document.getElementById('s_by').value)||1990;
@@ -619,8 +882,17 @@ function saveSettings(){
   S.jhanInvestAnnual=parseFloat(document.getElementById('s_ji').value)||0; S.jhanNetMonthly=parseFloat(document.getElementById('s_jn').value)||0;
   S.rothIRAannual=parseFloat(document.getElementById('s_ira').value)||0; S.hsaResumeYear=parseInt(document.getElementById('s_hsay').value)||2027;
   S.tradPct=parseFloat(document.getElementById('s_trad').value)||0; S.rothPct=parseFloat(document.getElementById('s_roth').value)||0;
+  S.tgtTrad=parseFloat(document.getElementById('s_ttrad').value)||0; S.tgtRoth=parseFloat(document.getElementById('s_troth').value)||0;
+  S.tgtEmployer=parseFloat(document.getElementById('s_temp').value)||0; S.hsaAnnual=parseFloat(document.getElementById('s_hsa').value)||0;
+  S.baseScale=(document.getElementById('s_scale')||{}).value||'standard';
+  S.quals={ intlAreas:parseInt((document.getElementById('s_intl')||{}).value)||0, ifs:!!(document.getElementById('s_ifs')||{}).checked, lca:!!(document.getElementById('s_lca')||{}).checked, wbom:!!(document.getElementById('s_wbom')||{}).checked };
   save(); alert('Saved.'); go('track');
 }
+function roleToggle(i,ck){ if(S.roles[i]){ S.roles[i].on=ck; save(); render(); } }
+function roleField(i,k,v){ if(S.roles[i]){ S.roles[i][k]=parseFloat(v)||0; save(); } }
+function acctAdd(){ S.retAccounts=S.retAccounts||[]; S.retAccounts.push({name:'New account',annual:0}); save(); render(); }
+function acctField(i,k,v){ if(S.retAccounts[i]){ S.retAccounts[i][k]= k==='annual'?(parseFloat(v)||0):v; save(); } }
+function acctDel(i){ S.retAccounts.splice(i,1); save(); render(); }
 
 /* ---------- boot ---------- */
 const _origRender=render;
