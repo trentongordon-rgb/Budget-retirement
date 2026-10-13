@@ -21,3 +21,15 @@ A private, single-file web app that checks your United dispatcher paycheck again
 Edit the `CHART` object at the top of `index.html` and add a new effective-date column. Adjust the rate-column cutoff dates in `rateCol()` to match.
 
 *Personal planning tool, not financial/legal advice. Verify discrepancies against your official paystub and your shop steward.*
+---
+
+# Tuon — Learn Hiligaynon (`hiligaynon/`)
+
+A separate single-page app for learning Hiligaynon (Ilonggo). Open `hiligaynon/index.html` (on GitHub Pages: `<your-pages-url>/hiligaynon/`). Progress is saved in your browser; it can be installed to your phone's home screen.
+
+- **Learn** — 12 lessons (greetings, introductions, pronouns, numbers, family, food, getting around, questions, feelings, verbs, time, love & expressions), grammar notes, and 🔊 audio for every phrase.
+- **Practice** — spaced-repetition flashcards, multiple-choice quizzes, and a listening quiz.
+- **Translate** — Hiligaynon ↔ English text translation (Google Translate online, with an offline phrasebook fallback), dictation, and a searchable phrasebook.
+- **Interpreter** — tap the mic and the app listens continuously; each time the speaker pauses, it translates what they said and speaks the English into your headphones. It also works the other way (you speak English, it shows/speaks Hiligaynon), and has a full-screen "show to them" view.
+
+Interpreter notes: use Chrome (Android/desktop) or Safari (iOS 14.5+) over **https** (GitHub Pages works; opening the file directly does not allow the microphone). No browser has a dedicated Hiligaynon speech model, so it listens with the closely related Filipino (fil-PH) model and translates from Hiligaynon — expect good results on clear speech, rougher ones with noise or fast talk. Speech and text are sent to Google/Apple for recognition and to Google Translate for translation.

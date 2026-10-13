@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="theme-color" content="#0f5257"/>
+<link rel="manifest" href="manifest.webmanifest"/>
+<link rel="icon" href="icon.svg" type="image/svg+xml"/>
+<link rel="apple-touch-icon" href="icon.svg"/>
+<title>Tuon · Learn Hiligaynon</title>
+<style>
+  :root{
+    --bg:#f7f3ec; --card:#ffffff; --ink:#1d2a2b; --muted:#66706f; --line:#e4ddd0;
+    --teal:#0f5257; --teal-2:#1a7a80; --teal-soft:#e2f0ef;
+    --sun:#e0703a; --sun-soft:#fbe7dc; --good:#2a7d46; --goodbg:#e1f2e6; --bad:#b4373b; --badbg:#fbe5e5;
+    --shadow:0 1px 2px rgba(30,40,40,.06),0 4px 14px rgba(30,40,40,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#121718; --card:#1b2224; --ink:#e8ecea; --muted:#9aa5a3; --line:#2c3638;
+      --teal:#5cc2c7; --teal-2:#7fd3d7; --teal-soft:#183234;
+      --sun:#f08a55; --sun-soft:#3a2418; --good:#6cc98a; --goodbg:#17301f; --bad:#f08487; --badbg:#3a1c1d;
+      --shadow:none;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink)}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:16px;line-height:1.45;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+  header{background:var(--teal);color:#fff;padding:16px 16px 14px;padding-top:calc(16px + env(safe-area-inset-top))}
+  @media (prefers-color-scheme: dark){header{background:#0b3a3d}}
+  header h1{margin:0;font-size:20px;letter-spacing:.2px}
+  header p{margin:2px 0 0;font-size:13px;opacity:.82}
+  main{max-width:760px;margin:0 auto;padding:16px}
+  section.tab{display:none} section.tab.active{display:block}
+  nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+  nav.tabs button{flex:1;border:0;background:none;color:var(--muted);padding:9px 4px 10px;font-size:12px;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+  nav.tabs button svg{width:22px;height:22px}
+  nav.tabs button.active{color:var(--teal)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+  h2{font-size:18px;margin:0 0 10px} h3{font-size:15px;margin:14px 0 6px}
+  .muted{color:var(--muted);font-size:13px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .spread{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  button{font:inherit}
+  .btn{border:0;background:var(--teal);color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;cursor:pointer;font-size:15px}
+  @media (prefers-color-scheme: dark){.btn{color:#0b1d1e}}
+  .btn.sun{background:var(--sun)}
+  .btn.ghost{background:var(--teal-soft);color:var(--teal)}
+  .btn.small{padding:6px 11px;font-size:13px;border-radius:8px}
+  .btn:disabled{opacity:.5;cursor:default}
+  .icon-btn{border:1px solid var(--line);background:var(--card);color:var(--teal);width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none}
+  .icon-btn svg{width:18px;height:18px}
+  select,input[type=text],textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit}
+  textarea{min-height:96px;resize:vertical}
+  label.f{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.4px}
+  .chk{display:flex;gap:8px;align-items:flex-start;margin:8px 0;font-size:14px}
+  .chk input{margin-top:3px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+  @media (max-width:560px){.grid2{grid-template-columns:1fr}}
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:700;background:var(--teal-soft);color:var(--teal)}
+  .pill.sun{background:var(--sun-soft);color:var(--sun)}
+  .pill.good{background:var(--goodbg);color:var(--good)}
+  .note{background:var(--sun-soft);border-radius:10px;padding:10px 12px;font-size:14px;margin:10px 0}
+  /* Learn */
+  .lessons{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+  .lesson-card{text-align:left;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:14px;padding:14px;cursor:pointer;box-shadow:var(--shadow)}
+  .lesson-card b{display:block;font-size:16px}
+  .lesson-card .en{color:var(--muted);font-size:13px}
+  .bar{height:6px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:10px}
+  .bar i{display:block;height:100%;background:var(--sun)}
+  .vocab{list-style:none;margin:0;padding:0}
+  .vocab li{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .vocab li:last-child{border-bottom:0}
+  .vocab .h{font-weight:700;font-size:17px}
+  .vocab .e{color:var(--muted);font-size:14px}
+  .vocab .n{font-size:12px;color:var(--sun);margin-top:2px}
+  .vocab .txt{flex:1;min-width:0}
+  /* Practice */
+  .flash{min-height:210px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;cursor:pointer;user-select:none}
+  .flash .front{font-size:30px;font-weight:800}
+  .flash .back{font-size:20px;color:var(--teal);margin-top:12px}
+  .flash .hint{font-size:13px;color:var(--muted);margin-top:14px}
+  .rate{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .opts{display:grid;gap:8px;margin-top:12px}
+  .opt{text-align:left;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:12px 14px;border-radius:10px;cursor:pointer;font-size:16px}
+  .opt.right{background:var(--goodbg);border-color:var(--good);color:var(--good);font-weight:700}
+  .opt.wrong{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+  .seg{display:inline-flex;background:var(--teal-soft);border-radius:10px;padding:3px;gap:3px;flex-wrap:wrap}
+  .seg button{border:0;background:none;color:var(--teal);padding:7px 12px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px}
+  .seg button.on{background:var(--card);box-shadow:var(--shadow)}
+  /* Translate */
+  .dir{display:flex;align-items:center;gap:8px;font-weight:700}
+  .dir span{flex:1;text-align:center;background:var(--teal-soft);color:var(--teal);padding:8px;border-radius:10px;font-size:14px}
+  .out{min-height:70px;font-size:19px;padding:12px;border-radius:10px;background:var(--teal-soft);margin-top:10px;white-space:pre-wrap}
+  .src{font-size:12px;margin-top:6px}
+  /* Interpreter */
+  .mic{width:120px;height:120px;border-radius:50%;border:0;background:var(--sun);color:#fff;display:flex;align-items:center;justify-content:center;margin:8px auto;cursor:pointer;box-shadow:0 6px 22px rgba(224,112,58,.35);position:relative}
+  .mic svg{width:48px;height:48px}
+  .mic.on{background:var(--bad);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(180,55,59,.45)}70%{box-shadow:0 0 0 22px rgba(180,55,59,0)}100%{box-shadow:0 0 0 0 rgba(180,55,59,0)}}
+  .status{text-align:center;font-weight:700;margin-top:4px}
+  .interim{text-align:center;color:var(--muted);font-style:italic;min-height:24px;margin-top:6px}
+  .log{display:flex;flex-direction:column;gap:10px}
+  .entry{border-left:4px solid var(--sun);padding:6px 10px;background:var(--bg);border-radius:0 10px 10px 0}
+  .entry .o{font-size:14px;color:var(--muted)}
+  .entry .t{font-size:18px;font-weight:600}
+  .entry .s{font-size:11px;color:var(--muted)}
+  .show{position:fixed;inset:0;z-index:50;background:var(--teal);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center}
+  .show.on{display:flex}
+  .show .big{font-size:clamp(30px,8vw,64px);font-weight:800;line-height:1.2}
+  .show .small{opacity:.8;margin-top:18px;font-size:18px}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tuon</h1>
+  <p>Learn Hiligaynon (Ilonggo) · lessons, practice, translator &amp; live interpreter</p>
+</header>
+
+<main>
+  <!-- LEARN -->
+  <section class="tab active" id="tab-learn">
+    <div id="learn-home">
+      <div class="card">
+        <div class="spread"><h2 style="margin:0">Maayong pag-abot!</h2><span class="pill sun" id="streak"></span></div>
+        <p class="muted" style="margin:6px 0 0">Welcome! Hiligaynon is spoken by ~9 million people in Western Visayas (Iloilo, Negros Occidental, Capiz, Guimaras) and Soccsksargen. Start with Greetings, then tap any phrase to hear it.</p>
+        <div class="row" style="margin-top:12px"><span class="pill" id="known-count"></span><span class="pill sun" id="due-count"></span></div>
+      </div>
+      <div class="lessons" id="lessons"></div>
+      <div class="card" style="margin-top:14px">
+        <h2>Pronunciation tips</h2>
+        <ul style="margin:0;padding-left:18px;font-size:15px">
+          <li>Spelling is phonetic: every letter is pronounced. Vowels are short and clear: <b>a</b> (father), <b>e/i</b> (between “eh” and “ee”), <b>o/u</b> (between “oh” and “oo”).</li>
+          <li><b>ng</b> is one sound, as in “si<b>ng</b>er” — even at the start of a word (<i>ngalan</i>).</li>
+          <li>A hyphen marks a glottal stop, a tiny catch in the throat: <i>gab-i</i> (night), <i>kan-on</i> (rice), <i>sin-o</i> (who).</li>
+          <li><b>g</b> is always hard (as in “go”).</li>
+        </ul>
+        <p class="muted">The 🔊 voice uses your device’s Filipino voice when available — close, but a native speaker is the real reference.</p>
+      </div>
+    </div>
+    <div id="learn-lesson" class="hidden">
+      <button class="btn ghost small" id="back-lessons">← All lessons</button>
+      <div class="card" style="margin-top:12px">
+        <div class="spread"><div><h2 id="ls-title" style="margin:0"></h2><div class="muted" id="ls-en"></div></div>
+        <button class="btn small sun" id="ls-practice">Practice</button></div>
+        <div id="ls-notes"></div>
+        <ul class="vocab" id="ls-items"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRACTICE -->
+  <section class="tab" id="tab-practice">
+    <div class="card">
+      <div class="seg" id="pr-mode">
+        <button data-m="cards" class="on">Flashcards</button>
+        <button data-m="quiz">Quiz</button>
+        <button data-m="listen">Listening</button>
+      </div>
+      <label class="f" for="pr-lesson">Lesson</label>
+      <select id="pr-lesson"></select>
+    </div>
+    <div class="card" id="pr-area"></div>
+  </section>
+
+  <!-- TRANSLATE -->
+  <section class="tab" id="tab-translate">
+    <div class="card">
+      <div class="dir"><span id="tr-from">Hiligaynon</span>
+        <button class="icon-btn" id="tr-swap" title="Swap languages" aria-label="Swap languages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 7h13l-4-4M17 17H4l4 4"/></svg></button>
+        <span id="tr-to">English</span></div>
+      <label class="f" for="tr-in">Text</label>
+      <textarea id="tr-in" placeholder="Type or dictate… e.g. Maayong aga, kamusta ka?"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="tr-go">Translate</button>
+        <button class="btn ghost" id="tr-mic">🎤 Dictate</button>
+        <button class="btn ghost" id="tr-clear">Clear</button>
+      </div>
+      <div class="out" id="tr-out" aria-live="polite"></div>
+      <div class="spread">
+        <div class="src muted" id="tr-src"></div>
+        <div class="row"><button class="icon-btn" id="tr-say" title="Speak" aria-label="Speak translation">🔊</button><button class="icon-btn" id="tr-copy" title="Copy" aria-label="Copy translation">⧉</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Phrasebook</h2>
+      <input type="text" id="pb-q" placeholder="Search English or Hiligaynon… (e.g. eat, salamat, where)"/>
+      <ul class="vocab" id="pb-list"></ul>
+    </div>
+  </section>
+
+  <!-- INTERPRETER -->
+  <section class="tab" id="tab-live">
+    <div class="card" id="live-unsupported" style="display:none">
+      <h2>Live interpreter not available here</h2>
+      <p>This browser doesn’t support speech recognition. Use <b>Chrome</b> (Android, Windows, Mac) or <b>Safari</b> (iPhone/iPad, iOS 14.5+). The page must be opened over <b>https</b> (e.g. GitHub Pages), not as a local file.</p>
+    </div>
+    <div class="card">
+      <div class="seg" id="lv-dir" style="display:flex;justify-content:center">
+        <button data-d="hil" class="on">They speak Hiligaynon → I hear English</button>
+        <button data-d="en">I speak English → Hiligaynon</button>
+      </div>
+      <button class="mic" id="lv-mic" aria-label="Start listening"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <div class="status" id="lv-status">Tap to start listening</div>
+      <div class="interim" id="lv-interim"></div>
+      <div class="row" style="justify-content:center;margin-top:8px">
+        <button class="btn ghost small" id="lv-show">Show to them ⤢</button>
+        <button class="btn ghost small" id="lv-clear">Clear log</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="spread"><h2 style="margin:0">Conversation</h2><span class="muted" id="lv-count"></span></div>
+      <div class="log" id="lv-log" style="margin-top:10px"><p class="muted">Translations appear here, newest first.</p></div>
+    </div>
+    <div class="card">
+      <h2>Interpreter settings</h2>
+      <div class="grid2">
+        <div>
+          <label class="f" for="st-reclang">Listen for (speech model)</label>
+          <select id="st-reclang">
+            <option value="fil-PH">Filipino (fil-PH) — best for Hiligaynon</option>
+            <option value="en-PH">English – Philippines (en-PH)</option>
+            <option value="en-US">English – US (en-US)</option>
+            <option value="custom">Custom code…</option>
+          </select>
+          <input type="text" id="st-reclang-custom" class="hidden" placeholder="e.g. ceb-PH" style="margin-top:6px"/>
+        </div>
+        <div>
+          <label class="f" for="st-srclang">Translate from</label>
+          <select id="st-srclang">
+            <option value="hil">Hiligaynon</option>
+            <option value="auto">Auto-detect (mixed Ilonggo / Tagalog / English)</option>
+          </select>
+        </div>
+        <div>
+          <label class="f" for="st-voice-en">English voice</label>
+          <select id="st-voice-en"></select>
+        </div>
+        <div>
+          <label class="f" for="st-voice-hil">Hiligaynon voice (closest available)</label>
+          <select id="st-voice-hil"></select>
+        </div>
+        <div>
+          <label class="f" for="st-rate">Speech speed <span id="st-rate-v"></span></label>
+          <input type="range" id="st-rate" min="0.7" max="1.6" step="0.1" style="width:100%"/>
+        </div>
+        <div>
+          <label class="f" for="st-engine">Translation engine</label>
+          <select id="st-engine">
+            <option value="online">Online (Google Translate) — best quality</option>
+            <option value="offline">Offline phrasebook only — private, rough</option>
+          </select>
+        </div>
+      </div>
+      <label class="chk"><input type="checkbox" id="st-speak"/> <span>Speak translations aloud (plays through your headphones)</span></label>
+      <label class="chk"><input type="checkbox" id="st-pause"/> <span>Pause the mic while speaking — turn <b>on</b> if you’re using the phone speaker so it doesn’t hear itself; leave <b>off</b> with headphones for nonstop listening</span></label>
+      <div class="note">
+        <b>How to use it with headphones:</b> plug in or connect your earbuds, choose <i>They speak Hiligaynon → I hear English</i>, tap the mic, and keep the phone pointed toward the speaker. Each time they pause, you’ll hear the English in your ears.
+        <br/><br/>
+        <b>Good to know:</b> phones don’t have a dedicated Hiligaynon speech model, so the app listens with the closely related Filipino model and then translates from Hiligaynon. It works best with clear speech, short sentences and little background noise. Speech recognition and online translation send audio/text to your browser’s provider (Google/Apple) and Google Translate. Bluetooth earbuds’ microphones can take over the phone mic — if it can’t hear the other person, use wired earbuds or the phone’s own mic.
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="show" id="show" role="dialog" aria-label="Translation shown full screen">
+  <div class="big" id="show-big"></div>
+  <div class="small" id="show-small"></div>
+  <button class="btn ghost" style="margin-top:28px" id="show-close">Close</button>
+</div>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="learn" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5"/></svg>Learn</button>
+  <button data-tab="practice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="14" height="14" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/></svg>Practice</button>
+  <button data-tab="translate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h8M8 3v2M6 5c0 4 3 7 6 8M10 5c-1 4-4 7-7 8M13 21l4-10 4 10M14.5 17h5"/></svg>Translate</button>
+  <button data-tab="live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-2a9 9 0 0 1 18 0v2"/><rect x="2" y="14" width="5" height="7" rx="2"/><rect x="17" y="14" width="5" height="7" rx="2"/></svg>Interpreter</button>
+</nav>
+
+<script>
+/* ===================== LESSON DATA =====================
+   Each item: [Hiligaynon, English, optional note]
+   "___" marks a slot where you insert your own word. */
+const LESSONS = [
+{ id:'greet', title:'Pangamusta', en:'Greetings & basics',
+  notes:'<b>Maayo</b> means “good”; <b>maayong</b> + time of day makes a greeting. <b>Gid</b> intensifies (“really, very”) and <b>man</b> softens a reply — you will hear both constantly.',
+  items:[
+  ['Maayong aga','Good morning'],
+  ['Maayong udto','Good noon','Used around midday'],
+  ['Maayong hapon','Good afternoon'],
+  ['Maayong gab-i','Good evening / Good night'],
+  ['Kamusta ka?','How are you?'],
+  ['Maayo man, ikaw?','I\'m fine, and you?'],
+  ['Salamat','Thank you'],
+  ['Madamo gid nga salamat','Thank you very much'],
+  ['Wala sang anuman','You\'re welcome'],
+  ['Palihog','Please'],
+  ['Pasensya na','Sorry'],
+  ['Oo','Yes'],
+  ['Indi','No','Refusing / “won\'t” / “not”'],
+  ['Ambot','I don\'t know','Casual'],
+  ['Sige','Okay'],
+  ['Halong','Take care','A common way to say goodbye'],
+  ['Asta liwat','See you again'],
+  ['Maayong pag-abot','Welcome'],
+]},
+{ id:'intro', title:'Pagpakilala', en:'Introductions & getting help',
+  notes:'<b>Ko</b> (I/my) and <b>mo</b> (you/your) come <i>after</i> the word they attach to: <i>ngalan mo</i> = your name. <b>Taga-</b> means “from”.',
+  items:[
+  ['Ano ang ngalan mo?','What is your name?'],
+  ['Ang ngalan ko si ___','My name is ___'],
+  ['Taga-diin ka?','Where are you from?'],
+  ['Taga-Amerika ako','I\'m from America'],
+  ['Diin ka nagapuyo?','Where do you live?'],
+  ['Nagapuyo ako sa ___','I live in ___'],
+  ['Pila na ang edad mo?','How old are you?'],
+  ['Nalipay ako nga makilala ka','Nice to meet you'],
+  ['Ini ang akon abyan','This is my friend'],
+  ['Kahibalo ka mag-Ingles?','Do you speak English?'],
+  ['Diutay lang','Just a little'],
+  ['Indi ko maintiendihan','I don\'t understand'],
+  ['Palihog, hinay-hinay lang','Please, slowly'],
+  ['Ano ang buot silingon sini?','What does this mean?'],
+  ['Ano ang ___ sa Hiligaynon?','What is ___ in Hiligaynon?'],
+  ['Nagatuon ako sang Hiligaynon','I am learning Hiligaynon'],
+]},
+{ id:'pron', title:'Mga Pronoun', en:'Pronouns & pointing words',
+  notes:'Hiligaynon has two kinds of “we”: <b>kita</b> includes the listener, <b>kami</b> excludes them. Short forms like <b>ko, mo, ka, ta</b> are used right after verbs.',
+  items:[
+  ['ako','I / me'],
+  ['ikaw','you','Short form: ka'],
+  ['siya','he / she'],
+  ['kita','we (including you)'],
+  ['kami','we (not including you)'],
+  ['kamo','you all'],
+  ['sila','they'],
+  ['akon','my / mine'],
+  ['imo','your / yours'],
+  ['iya','his / her'],
+  ['aton','our (including you)'],
+  ['amon','our (not including you)'],
+  ['ila','their'],
+  ['ini','this'],
+  ['ina','that (near you)'],
+  ['ato','that (over there)'],
+  ['diri','here'],
+  ['didto','there'],
+]},
+{ id:'num', title:'Mga Numero', en:'Numbers & money',
+  notes:'Native numbers are used for counting things; <b>Spanish</b> numbers (uno, dos, tres…) are very common for prices and telling time. <b>Ka</b> links a number to a noun: <i>duha ka saging</i> = two bananas.',
+  items:[
+  ['isa','one'],['duha','two'],['tatlo','three'],['apat','four'],['lima','five'],
+  ['anom','six'],['pito','seven'],['walo','eight'],['siyam','nine'],['napulo','ten'],
+  ['napulo kag isa','eleven'],
+  ['duha ka pulo','twenty'],
+  ['isa ka gatos','one hundred'],
+  ['isa ka libo','one thousand'],
+  ['kwarta','money'],
+  ['Pila?','How much? / How many?'],
+]},
+{ id:'family', title:'Pamilya', en:'Family',
+  notes:'<b>Utod</b> is any sibling; to be specific use <b>magulang</b> (older) or <b>manghod</b> (younger). Add <b>mga</b> before a noun for plural: <i>mga anak</i> = children.',
+  items:[
+  ['pamilya','family'],
+  ['nanay','mother','Also: iloy'],
+  ['tatay','father','Also: amay'],
+  ['utod','sibling'],
+  ['magulang','older sibling'],
+  ['manghod','younger sibling'],
+  ['anak','child (son / daughter)'],
+  ['bata','kid'],
+  ['lolo','grandfather'],
+  ['lola','grandmother'],
+  ['apo','grandchild'],
+  ['bana','husband'],
+  ['asawa','wife / spouse'],
+  ['tiyo','uncle'],
+  ['tiya','aunt'],
+  ['pakaisa','cousin'],
+  ['ugangan','parent-in-law'],
+  ['Pila kamo ka magulutod?','How many siblings are you?'],
+]},
+{ id:'food', title:'Pagkaon', en:'Food & eating',
+  notes:'Asking <b>“Nakakaon ka na?”</b> (Have you eaten?) is a warm everyday greeting. Iloilo is famous for <i>La Paz batchoy</i> and <i>pancit molo</i>.',
+  items:[
+  ['pagkaon','food'],
+  ['kan-on','cooked rice'],
+  ['tubig','water'],
+  ['isda','fish'],
+  ['karne','meat'],
+  ['manok','chicken'],
+  ['baboy','pork / pig'],
+  ['utan','vegetables'],
+  ['prutas','fruit'],
+  ['saging','banana'],
+  ['kape','coffee'],
+  ['tinapay','bread'],
+  ['itlog','egg'],
+  ['asin','salt'],
+  ['Gutom na ako','I\'m hungry'],
+  ['Busog na ako','I\'m full'],
+  ['Nakakaon ka na?','Have you eaten?'],
+  ['Kaon ta!','Let\'s eat!'],
+  ['Namit gid!','It\'s really delicious!'],
+  ['Isa pa, palihog','One more, please'],
+]},
+{ id:'around', title:'Paglakat kag Pagbakal', en:'Getting around & shopping',
+  notes:'Careful: <b>wala</b> means both “none” and “left” (direction). <b>Makadto</b> = will go to.',
+  items:[
+  ['Pila ini?','How much is this?'],
+  ['Mahal','Expensive'],
+  ['Barato','Cheap'],
+  ['Diin ang ___?','Where is the ___?'],
+  ['Diin ang CR?','Where is the restroom?'],
+  ['Diin ka makadto?','Where are you going?'],
+  ['Makadto ako sa ___','I\'m going to ___'],
+  ['balay','house'],
+  ['tindahan','store'],
+  ['merkado','market'],
+  ['simbahan','church'],
+  ['eskwelahan','school'],
+  ['tuo','right'],
+  ['wala','left'],
+  ['diretso','straight ahead'],
+  ['malapit','near'],
+  ['malayo','far'],
+  ['Para!','Stop! (to a jeepney driver)'],
+]},
+{ id:'q', title:'Mga Pamangkot', en:'Question words',
+  notes:'Question words usually come first: <i>Diin ka?</i> (Where are you?). Raise your voice at the end for yes/no questions.',
+  items:[
+  ['Ano?','What?'],
+  ['Sin-o?','Who?'],
+  ['Diin?','Where?'],
+  ['San-o?','When?'],
+  ['Ngaa?','Why?'],
+  ['Paano?','How?'],
+  ['Pila?','How much? / How many?'],
+  ['Alin?','Which?'],
+  ['Sin-o ina?','Who is that?'],
+  ['Ano ini?','What is this?'],
+  ['Ngaa man?','Why so?'],
+  ['San-o ka mabalik?','When will you come back?'],
+]},
+{ id:'desc', title:'Batyag kag Paglaragway', en:'Feelings & describing',
+  notes:'Many adjectives start with <b>ma-</b>: <i>matahum</i> (beautiful), <i>malipayon</i> (happy). Add <b>gid</b> for “very”: <i>Kapoy gid ako</i> = I\'m really tired.',
+  items:[
+  ['malipayon','happy'],
+  ['masubo','sad'],
+  ['kapoy','tired'],
+  ['akig','angry'],
+  ['uhaw','thirsty'],
+  ['gutom','hungry'],
+  ['masakit','painful / sick'],
+  ['Masakit ang ulo ko','My head hurts'],
+  ['daku','big'],
+  ['gamay','small'],
+  ['matahum','beautiful'],
+  ['gwapo','handsome'],
+  ['gwapa','pretty'],
+  ['init','hot'],
+  ['bugnaw','cold'],
+  ['maayo','good'],
+  ['malain','bad'],
+  ['madasig','fast'],
+  ['mahinay','slow'],
+  ['madamo','many / a lot'],
+]},
+{ id:'verbs', title:'Mga Berbo', en:'Common verbs',
+  notes:'Verbs change with time using prefixes: <b>naga-</b> for now/habit (<i>nagakaon ako</i> = I am eating), <b>nag-</b> for past (<i>nagkaon ako</i> = I ate), <b>maga-/ma-</b> for future (<i>makaon ako</i> = I will eat). <b>Indi</b> negates future, <b>wala</b> negates past.',
+  items:[
+  ['kaon','eat'],
+  ['inom','drink'],
+  ['tulog','sleep'],
+  ['lakat','walk / leave'],
+  ['kadto','go (to a place)'],
+  ['balik','return'],
+  ['hambal','speak / say'],
+  ['bakal','buy'],
+  ['baligya','sell'],
+  ['basa','read'],
+  ['sulat','write'],
+  ['tan-aw','watch / look'],
+  ['pamati','listen'],
+  ['hulat','wait'],
+  ['bulig','help'],
+  ['luto','cook'],
+  ['trabaho','work'],
+  ['Nagakaon ako','I am eating'],
+  ['Nagkaon ako','I ate'],
+  ['Makaon ako','I will eat'],
+  ['Wala ako nagkaon','I didn\'t eat'],
+  ['Hulat anay','Wait a moment'],
+  ['Buligi ako!','Help me!'],
+]},
+{ id:'time', title:'Tion kag Adlaw', en:'Time & days',
+  notes:'Days of the week come from Spanish. <b>Subong</b> means “now” and <b>subong nga adlaw</b> “today”.',
+  items:[
+  ['subong','now'],
+  ['subong nga adlaw','today'],
+  ['buwas','tomorrow'],
+  ['kahapon','yesterday'],
+  ['aga','morning'],
+  ['hapon','afternoon'],
+  ['gab-i','night'],
+  ['adlaw','day / sun'],
+  ['semana','week'],
+  ['bulan','month / moon'],
+  ['tuig','year'],
+  ['Lunes','Monday'],['Martes','Tuesday'],['Miyerkoles','Wednesday'],['Huwebes','Thursday'],
+  ['Biyernes','Friday'],['Sabado','Saturday'],['Domingo','Sunday'],
+  ['Ano nga oras na?','What time is it?'],
+]},
+{ id:'heart', title:'Gugma kag Kalipay', en:'Love & expressions',
+  notes:'Ilonggos are famous for being <i>malambing</i> — sweet and gentle-sounding. <b>Ay abaw!</b> is the classic Ilonggo exclamation of surprise.',
+  items:[
+  ['gugma','love'],
+  ['Palangga ta ka','I love you','Warm, everyday — “you are dear to me”'],
+  ['Ginahigugma ta ka','I love you','Deeper / more formal'],
+  ['Ginamingaw ko ikaw','I miss you'],
+  ['Matahum ka','You are beautiful'],
+  ['Ay abaw!','Oh my! / Wow!'],
+  ['Indi ka magkabalaka','Don\'t worry'],
+  ['Maayong adlaw','Good day'],
+  ['Kalipay','Joy / happiness'],
+  ['Abyan ta ka','You are my friend'],
+]},
+];
+
+/* Function words for the offline gist translator (not shown as lessons) */
+const EXTRA = [
+  ['ang','the'],['sang','of'],['sa','to / at / in'],['kag','and'],['ukon','or'],['nga','that'],
+  ['ko','I / my'],['mo','you / your'],['ka','you'],['ta','we / I'],['niya','he / she / his / her'],
+  ['gid','really'],['man','also'],['na','already / now'],['pa','still / more'],['lang','just'],['si','(name marker)'],
+  ['mga','(plural)'],['may','there is / has'],['wala','none / not'],['indi','not / no'],['kon','if'],
+  ['kay','because'],['pero','but'],['basi','maybe'],['tanan','all'],['ano','what'],['diin','where'],
+  ['tawo','person'],['lalaki','man'],['babaye','woman'],['adlaw','day'],['ulan','rain'],['dalan','road'],
+  ['pulong','word'],['hambalanon','language'],['sakyan','vehicle'],['kwarto','room'],['baryo','village'],
+];
+
+/* ===================== STORAGE ===================== */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem('tuon.'+k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem('tuon.'+k, JSON.stringify(v)); }catch(e){} }
+};
+const settings = Object.assign({
+  engine:'online', recLang:'fil-PH', recLangCustom:'', srcLang:'hil',
+  voiceEn:'', voiceHil:'', rate:1, speak:true, pauseWhileSpeaking:false, trDir:'hil'
+}, store.get('settings', {}));
+const saveSettings = () => store.set('settings', settings);
+let progress = store.get('progress', {}); // key -> {box, due}
+const saveProgress = () => store.set('progress', progress);
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const shuffle = a => { a = a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+
+const ALL = [];
+LESSONS.forEach(l => l.items.forEach(([h,e,n]) => ALL.push({h, e, n, lesson:l.id})));
+const keyOf = it => it.lesson + '|' + it.h;
+
+/* ===================== DAILY STREAK ===================== */
+(function streak(){
+  const today = new Date().toDateString();
+  const s = store.get('streak', {last:'', n:0});
+  if(s.last !== today){
+    const y = new Date(Date.now()-864e5).toDateString();
+    s.n = s.last === y ? s.n + 1 : 1; s.last = today; store.set('streak', s);
+  }
+  $('#streak').textContent = '🔥 ' + s.n + (s.n === 1 ? ' day' : ' days');
+})();
+
+/* ===================== SPEECH SYNTHESIS ===================== */
+const synth = window.speechSynthesis;
+let voices = [];
+const liveUtterances = new Set(); // keep references so Chrome fires onend
+function loadVoices(){
+  if(!synth) return;
+  voices = synth.getVoices();
+  const en = voices.filter(v => /^en/i.test(v.lang));
+  const hilLike = voices.filter(v => /^(fil|tl|ceb|hil)/i.test(v.lang))
+    .concat(voices.filter(v => /^(id|ms)/i.test(v.lang)))
+    .concat(voices.filter(v => /^es/i.test(v.lang)));
+  const fill = (sel, list, cur, autoLabel) => {
+    sel.innerHTML = '<option value="">'+autoLabel+'</option>' + list.map(v =>
+      `<option value="${esc(v.voiceURI)}" ${v.voiceURI===cur?'selected':''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('');
+  };
+  fill($('#st-voice-en'), en, settings.voiceEn, 'Automatic English voice');
+  fill($('#st-voice-hil'), hilLike, settings.voiceHil, hilLike.length ? 'Automatic (best match)' : 'Device default (no Filipino voice found)');
+}
+function pickVoice(lang){
+  if(lang === 'en'){
+    return voices.find(v => v.voiceURI === settings.voiceEn)
+      || voices.find(v => /^en[-_]US/i.test(v.lang) && v.localService)
+      || voices.find(v => /^en/i.test(v.lang));
+  }
+  return voices.find(v => v.voiceURI === settings.voiceHil)
+    || voices.find(v => /^(fil|tl)/i.test(v.lang))
+    || voices.find(v => /^(id|ms)/i.test(v.lang));
+}
+function speak(text, lang, onDone){
+  if(!synth || !text){ onDone && onDone(); return; }
+  const u = new SpeechSynthesisUtterance(text.replace(/___/g, ' blank '));
+  const v = pickVoice(lang);
+  if(v){ u.voice = v; u.lang = v.lang; } else { u.lang = lang === 'en' ? 'en-US' : 'fil-PH'; }
+  u.rate = lang === 'en' ? settings.rate : Math.min(settings.rate, 1) * 0.9;
+  liveUtterances.add(u);
+  const done = () => { liveUtterances.delete(u); onDone && onDone(); };
+  u.onend = done; u.onerror = done;
+  synth.speak(u);
+}
+if(synth){ loadVoices(); synth.onvoiceschanged = loadVoices; }
+const sayBtn = (text, lang='hil') => `<button class="icon-btn" data-say="${esc(text)}" data-lang="${lang}" aria-label="Play">🔊</button>`;
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-say]');
+  if(b){ synth && synth.cancel(); speak(b.dataset.say, b.dataset.lang); }
+});
+
+/* ===================== TABS ===================== */
+$('#tabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-tab]'); if(!b) return;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x === b));
+  document.querySelectorAll('section.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-'+b.dataset.tab));
+  if(b.dataset.tab === 'learn') renderLessons();
+  if(b.dataset.tab === 'practice') renderPractice();
+  window.scrollTo(0,0);
+});
+function goTab(name){ $(`#tabs button[data-tab="${name}"]`).click(); }
+
+/* ===================== LEARN ===================== */
+const isKnown = it => (progress[keyOf(it)]?.box || 0) >= 3;
+const isDue = it => { const p = progress[keyOf(it)]; return p && p.due <= Date.now(); };
+function renderLessons(){
+  $('#lessons').innerHTML = LESSONS.map(l => {
+    const items = ALL.filter(i => i.lesson === l.id);
+    const known = items.filter(isKnown).length;
+    return `<button class="lesson-card" data-lesson="${l.id}"><b>${esc(l.title)}</b><span class="en">${esc(l.en)}</span>
+      <div class="bar"><i style="width:${Math.round(known/items.length*100)}%"></i></div>
+      <span class="muted">${known}/${items.length} learned</span></button>`;
+  }).join('');
+  $('#known-count').textContent = ALL.filter(isKnown).length + ' of ' + ALL.length + ' words learned';
+  const due = ALL.filter(isDue).length;
+  $('#due-count').textContent = due + ' due for review';
+}
+let currentLesson = null;
+$('#lessons').addEventListener('click', e => {
+  const b = e.target.closest('[data-lesson]'); if(!b) return;
+  const l = LESSONS.find(x => x.id === b.dataset.lesson); currentLesson = l.id;
+  $('#ls-title').textContent = l.title; $('#ls-en').textContent = l.en;
+  $('#ls-notes').innerHTML = `<div class="note">${l.notes}</div>`;
+  $('#ls-items').innerHTML = l.items.map(([h,e,n]) => vocabLi(h,e,n)).join('');
+  $('#learn-home').classList.add('hidden'); $('#learn-lesson').classList.remove('hidden');
+  window.scrollTo(0,0);
+});
+function vocabLi(h, e, n){
+  return `<li>${sayBtn(h)}<div class="txt"><div class="h">${esc(h)}</div><div class="e">${esc(e)}</div>${n?`<div class="n">${esc(n)}</div>`:''}</div></li>`;
+}
+$('#back-lessons').onclick = () => { $('#learn-lesson').classList.add('hidden'); $('#learn-home').classList.remove('hidden'); renderLessons(); };
+$('#ls-practice').onclick = () => { $('#pr-lesson').value = currentLesson; goTab('practice'); };
+
+/* ===================== PRACTICE (spaced repetition) ===================== */
+const INTERVALS = [1, 10, 60*24, 60*24*3, 60*24*7, 60*24*21, 60*24*60]; // minutes per box
+function grade(it, delta){
+  const k = keyOf(it); const p = progress[k] || {box:0, due:0};
+  p.box = delta < 0 ? 0 : Math.min(p.box + delta, INTERVALS.length - 1);
+  p.due = Date.now() + INTERVALS[p.box] * 60000;
+  progress[k] = p; saveProgress();
+}
+$('#pr-lesson').innerHTML = '<option value="all">All lessons</option>' + LESSONS.map(l => `<option value="${l.id}">${esc(l.title)} — ${esc(l.en)}</option>`).join('');
+let prMode = 'cards';
+$('#pr-mode').addEventListener('click', e => {
+  const b = e.target.closest('button[data-m]'); if(!b) return;
+  prMode = b.dataset.m;
+  document.querySelectorAll('#pr-mode button').forEach(x => x.classList.toggle('on', x === b));
+  renderPractice();
+});
+$('#pr-lesson').onchange = renderPractice;
+const pool = () => { const v = $('#pr-lesson').value; return ALL.filter(i => (v === 'all' || i.lesson === v) && !i.h.includes('___')); };
+
+function nextCard(){
+  const p = pool(); const now = Date.now();
+  const due = p.filter(i => progress[keyOf(i)] && progress[keyOf(i)].due <= now).sort((a,b) => progress[keyOf(a)].due - progress[keyOf(b)].due);
+  if(due.length) return due[0];
+  const fresh = p.filter(i => !progress[keyOf(i)]);
+  return fresh[0] || null;
+}
+function renderPractice(){
+  if(prMode === 'cards') renderCard();
+  else renderQuiz();
+}
+function renderCard(){
+  const it = nextCard(); const area = $('#pr-area');
+  if(!it){
+    const p = pool(); const soon = p.map(i => progress[keyOf(i)]?.due || Infinity).sort((a,b)=>a-b)[0];
+    area.innerHTML = `<div class="flash"><div class="front">Nahuman na! 🎉</div><div class="back">All done for now.</div>
+      <div class="hint">${isFinite(soon) ? 'Next review ' + timeUntil(soon) + '. ' : ''}Try a quiz, or pick another lesson.</div></div>`;
+    return;
+  }
+  const isNew = !progress[keyOf(it)];
+  area.innerHTML = `<div class="spread"><span class="pill ${isNew?'sun':''}">${isNew?'New':'Review'}</span>${sayBtn(it.h)}</div>
+    <div class="flash" id="fc"><div class="front">${esc(it.h)}</div><div class="back hidden" id="fc-back">${esc(it.e)}${it.n?`<div class="muted">${esc(it.n)}</div>`:''}</div><div class="hint" id="fc-hint">Tap to reveal</div></div>
+    <div class="rate hidden" id="fc-rate"><button class="btn ghost" data-g="-1">Again</button><button class="btn" data-g="1">Good</button><button class="btn sun" data-g="2">Easy</button></div>`;
+  $('#fc').onclick = () => { $('#fc-back').classList.remove('hidden'); $('#fc-hint').classList.add('hidden'); $('#fc-rate').classList.remove('hidden'); };
+  $('#fc-rate').onclick = e => { const b = e.target.closest('[data-g]'); if(!b) return; grade(it, +b.dataset.g); renderCard(); };
+  if(isNew) speak(it.h, 'hil');
+}
+function timeUntil(t){
+  const m = Math.max(1, Math.round((t - Date.now())/60000));
+  return m < 60 ? `in ${m} min` : m < 1440 ? `in ${Math.round(m/60)} h` : `in ${Math.round(m/1440)} days`;
+}
+
+let quiz = null;
+function renderQuiz(){
+  const p = pool();
+  if(p.length < 4){ $('#pr-area').innerHTML = '<p>This lesson needs at least 4 words for a quiz.</p>'; return; }
+  quiz = { qs: shuffle(p).slice(0, 10), i: 0, score: 0 };
+  askQuestion();
+}
+function askQuestion(){
+  const area = $('#pr-area');
+  if(quiz.i >= quiz.qs.length){
+    const pct = Math.round(quiz.score / quiz.qs.length * 100);
+    area.innerHTML = `<div class="flash"><div class="front">${quiz.score} / ${quiz.qs.length}</div>
+      <div class="back">${pct >= 80 ? 'Maayo gid! Excellent!' : pct >= 50 ? 'Maayo! Keep going.' : 'Sige lang — practice makes perfect.'}</div></div>
+      <button class="btn" id="qz-again" style="width:100%">Another round</button>`;
+    $('#qz-again').onclick = renderQuiz; return;
+  }
+  const it = quiz.qs[quiz.i];
+  const listen = prMode === 'listen';
+  const toEn = listen || Math.random() < 0.6; // prompt in Hiligaynon, answer English
+  const seen = new Set([it.e, it.h]), distract = [];
+  for(const x of shuffle(pool())){ if(distract.length === 3) break; if(seen.has(x.e) || seen.has(x.h)) continue; seen.add(x.e); seen.add(x.h); distract.push(x); }
+  const opts = shuffle([it, ...distract]);
+  const prompt = listen
+    ? `<div class="flash" style="min-height:140px"><button class="mic" style="width:84px;height:84px" id="qz-play" aria-label="Play again">🔊</button><div class="hint">What did you hear?</div></div>`
+    : `<div class="flash" style="min-height:140px"><div class="hint">${toEn ? 'What does this mean?' : 'How do you say…'}</div><div class="front">${esc(toEn ? it.h : it.e)}</div></div>`;
+  area.innerHTML = `<div class="spread"><span class="pill">Question ${quiz.i+1} of ${quiz.qs.length}</span><span class="pill good">Score ${quiz.score}</span></div>
+    ${prompt}<div class="opts">${opts.map((o, i) => `<button class="opt" data-i="${i}">${esc(toEn ? o.e : o.h)}</button>`).join('')}</div>`;
+  if(listen){ speak(it.h, 'hil'); $('#qz-play').onclick = () => speak(it.h, 'hil'); }
+  area.querySelector('.opts').onclick = e => {
+    const b = e.target.closest('.opt'); if(!b || quiz.answered) return;
+    quiz.answered = true;
+    const pick = opts[+b.dataset.i]; const right = pick === it;
+    area.querySelectorAll('.opt').forEach((x, i) => { if(opts[i] === it) x.classList.add('right'); });
+    if(!right) b.classList.add('wrong');
+    if(right) quiz.score++;
+    grade(it, right ? 1 : -1);
+    if(!listen) speak(it.h, 'hil');
+    setTimeout(() => { quiz.answered = false; quiz.i++; askQuestion(); }, right ? 900 : 1900);
+  };
+}
+
+/* ===================== TRANSLATION ENGINE ===================== */
+const cache = new Map();
+async function translate(text, from, to){
+  text = text.trim(); if(!text) return {text:'', src:''};
+  const key = from + '>' + to + ':' + text;
+  if(cache.has(key)) return cache.get(key);
+  if(settings.engine === 'online' && navigator.onLine !== false){
+    try{
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 7000);
+      const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&dt=t'
+        + '&sl=' + from + '&tl=' + to + '&q=' + encodeURIComponent(text);
+      const r = await fetch(url, {signal: ctrl.signal}); clearTimeout(t);
+      if(r.ok){
+        const j = await r.json();
+        const out = (j[0] || []).map(s => s[0]).join('').trim();
+        if(out){ const res = {text: out, src: 'online'}; cache.set(key, res); return res; }
+      }
+    }catch(e){ /* fall through to offline */ }
+  }
+  return {text: offlineTranslate(text, from === 'en' ? 'en' : 'hil'), src: 'offline'};
+}
+
+// Offline gist: greedy longest-phrase match against the phrasebook.
+const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9'\- ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const H2E = new Map(), E2H = new Map();
+[...EXTRA, ...LESSONS.flatMap(l => l.items)].forEach(([h, e]) => {
+  if(h.includes('___')) return;
+  const hk = norm(h); if(hk && !H2E.has(hk)) H2E.set(hk, e.split(' / ')[0].replace(/\s*\(.*?\)\s*/g, ' ').trim() || e);
+  e.split('/').forEach(alt => { const ek = norm(alt); if(ek && !E2H.has(ek)) E2H.set(ek, h.replace(/[?!.,]/g, '')); });
+});
+function offlineTranslate(text, from){
+  const map = from === 'en' ? E2H : H2E;
+  return text.split(/(?<=[.!?])\s+/).map(sentence => {
+    const toks = norm(sentence).split(' ').filter(Boolean); const out = [];
+    for(let i = 0; i < toks.length;){
+      let hit = false;
+      for(let n = Math.min(7, toks.length - i); n > 0; n--){
+        const ph = toks.slice(i, i+n).join(' ');
+        if(map.has(ph)){ out.push(map.get(ph)); i += n; hit = true; break; }
+      }
+      if(!hit){ out.push('[' + toks[i] + ']'); i++; }
+    }
+    return out.join(' ');
+  }).join(' ').replace(/\s+/g, ' ');
+}
+const srcLabel = s => s === 'online' ? 'Translated online (Google Translate)' : s === 'offline' ? 'Offline word-by-word gist — [brackets] = unknown words' : '';
+
+/* ===================== TRANSLATE TAB ===================== */
+function setTrDir(d){
+  settings.trDir = d; saveSettings();
+  $('#tr-from').textContent = d === 'hil' ? 'Hiligaynon' : 'English';
+  $('#tr-to').textContent = d === 'hil' ? 'English' : 'Hiligaynon';
+  $('#tr-in').placeholder = d === 'hil' ? 'Type or dictate… e.g. Maayong aga, kamusta ka?' : 'Type or dictate… e.g. Where is the market?';
+}
+setTrDir(settings.trDir);
+let lastTr = {text:'', lang:'en'};
+$('#tr-swap').onclick = () => {
+  const out = $('#tr-out').textContent;
+  setTrDir(settings.trDir === 'hil' ? 'en' : 'hil');
+  if(out){ $('#tr-in').value = out; doTranslate(); }
+};
+async function doTranslate(){
+  const text = $('#tr-in').value; if(!text.trim()) return;
+  const from = settings.trDir, to = from === 'hil' ? 'en' : 'hil';
+  $('#tr-out').textContent = '…';
+  const r = await translate(text, from, to);
+  $('#tr-out').textContent = r.text; $('#tr-src').textContent = srcLabel(r.src);
+  lastTr = {text: r.text, lang: to};
+}
+$('#tr-go').onclick = doTranslate;
+$('#tr-in').addEventListener('keydown', e => { if(e.key === 'Enter' && (e.metaKey || e.ctrlKey)) doTranslate(); });
+$('#tr-clear').onclick = () => { $('#tr-in').value = ''; $('#tr-out').textContent = ''; $('#tr-src').textContent = ''; };
+$('#tr-say').onclick = () => { synth && synth.cancel(); speak(lastTr.text, lastTr.lang); };
+$('#tr-copy').onclick = () => { navigator.clipboard && navigator.clipboard.writeText($('#tr-out').textContent); };
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recLang = () => settings.recLang === 'custom' ? (settings.recLangCustom || 'fil-PH') : settings.recLang;
+$('#tr-mic').onclick = () => {
+  if(!SR){ alert('Dictation needs Chrome or Safari.'); return; }
+  const r = new SR();
+  r.lang = settings.trDir === 'hil' ? recLang() : 'en-US';
+  r.interimResults = true;
+  $('#tr-mic').textContent = '🎙 Listening…';
+  r.onresult = e => { $('#tr-in').value = Array.from(e.results).map(x => x[0].transcript).join(' '); };
+  r.onend = () => { $('#tr-mic').textContent = '🎤 Dictate'; doTranslate(); };
+  r.onerror = e => { $('#tr-src').textContent = 'Mic error: ' + e.error; };
+  r.start();
+};
+
+function renderPhrasebook(){
+  const q = norm($('#pb-q').value);
+  const list = q ? ALL.filter(i => norm(i.h).includes(q) || norm(i.e).includes(q)) : ALL.filter(i => i.lesson === 'greet' || i.lesson === 'intro');
+  $('#pb-list').innerHTML = list.slice(0, 60).map(i => vocabLi(i.h, i.e, i.n)).join('') || '<li class="muted">No match in the phrasebook — try the translator above.</li>';
+}
+$('#pb-q').addEventListener('input', renderPhrasebook);
+
+/* ===================== LIVE INTERPRETER ===================== */
+let liveDir = 'hil';         // 'hil': they speak Hiligaynon -> English audio; 'en': I speak English -> Hiligaynon
+let rec = null, running = false, pausedForSpeech = false, pendingSpeech = 0, wakeLock = null;
+let chain = Promise.resolve(), count = 0, lastLive = null;
+
+if(!SR){ $('#live-unsupported').style.display = 'block'; $('#lv-mic').disabled = true; }
+
+$('#lv-dir').addEventListener('click', e => {
+  const b = e.target.closest('button[data-d]'); if(!b) return;
+  liveDir = b.dataset.d;
+  document.querySelectorAll('#lv-dir button').forEach(x => x.classList.toggle('on', x === b));
+  if(running){ stopLive(); startLive(); }
+});
+const setStatus = s => $('#lv-status').textContent = s;
+
+function startLive(){
+  if(!SR) return;
+  running = true; pausedForSpeech = false;
+  $('#lv-mic').classList.add('on'); $('#lv-mic').setAttribute('aria-label', 'Stop listening');
+  setStatus(liveDir === 'hil' ? 'Listening for Hiligaynon…' : 'Listening for English…');
+  if(navigator.wakeLock) navigator.wakeLock.request('screen').then(l => wakeLock = l).catch(() => {});
+  // Unlock speech output on iOS: speak something silent from the user gesture
+  if(synth){ const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); }
+  listen();
+}
+function listen(){
+  if(!running) return;
+  rec = new SR();
+  rec.lang = liveDir === 'hil' ? recLang() : 'en-US';
+  rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+  rec.onresult = e => {
+    let interim = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const r = e.results[i];
+      if(r.isFinal) handleHeard(r[0].transcript); else interim += r[0].transcript;
+    }
+    $('#lv-interim').textContent = interim;
+  };
+  rec.onerror = e => {
+    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      stopLive(); setStatus('Microphone blocked — allow mic access for this site and open it over https.');
+    } else if(e.error === 'language-not-supported'){
+      stopLive(); setStatus('This browser can’t listen for “' + rec.lang + '”. Choose Filipino (fil-PH) in settings.');
+    } else if(e.error === 'network'){
+      setStatus('Speech recognition needs an internet connection.');
+    } else if(e.error === 'audio-capture'){
+      stopLive(); setStatus('No microphone found.');
+    }
+  };
+  rec.onend = () => {
+    // Browsers end recognition after silence; restart automatically while running.
+    if(running && !pausedForSpeech) setTimeout(() => { if(running && !pausedForSpeech) listen(); }, 200);
+  };
+  try{ rec.start(); }catch(e){}
+}
+function stopLive(){
+  running = false; pausedForSpeech = false;
+  try{ rec && rec.abort(); }catch(e){}
+  $('#lv-mic').classList.remove('on'); $('#lv-mic').setAttribute('aria-label', 'Start listening');
+  $('#lv-interim').textContent = '';
+  setStatus('Tap to start listening');
+  if(wakeLock){ wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+$('#lv-mic').onclick = () => running ? stopLive() : startLive();
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && running && navigator.wakeLock && !wakeLock)
+    navigator.wakeLock.request('screen').then(l => wakeLock = l).catch(() => {});
+});
+
+function handleHeard(text){
+  text = text.trim(); if(!text) return;
+  const from = liveDir === 'hil' ? settings.srcLang : 'en';
+  const to = liveDir === 'hil' ? 'en' : 'hil';
+  if($('#lv-log').querySelector('p.muted')) $('#lv-log').innerHTML = '';
+  const el = document.createElement('div'); el.className = 'entry';
+  el.innerHTML = `<div class="o">${esc(text)}</div><div class="t">…</div><div class="s"></div>`;
+  $('#lv-log').prepend(el);
+  $('#lv-count').textContent = (++count) + (count === 1 ? ' line' : ' lines');
+  // Translate in order so speech never comes out shuffled.
+  chain = chain.then(async () => {
+    const r = await translate(text, from, to);
+    el.querySelector('.t').textContent = r.text;
+    el.querySelector('.s').textContent = r.src === 'offline' ? 'offline gist' : '';
+    lastLive = {orig: text, text: r.text};
+    if($('#show').classList.contains('on')) updateShow();
+    if(settings.speak) speakLive(r.text, to);
+  });
+}
+function speakLive(text, lang){
+  if(settings.pauseWhileSpeaking && running && !pausedForSpeech){
+    pausedForSpeech = true; try{ rec.abort(); }catch(e){}
+    setStatus('Speaking…');
+  }
+  pendingSpeech++;
+  speak(text, lang, () => {
+    pendingSpeech--;
+    if(pendingSpeech <= 0 && pausedForSpeech){
+      pausedForSpeech = false;
+      if(running){ setStatus(liveDir === 'hil' ? 'Listening for Hiligaynon…' : 'Listening for English…'); listen(); }
+    }
+  });
+}
+$('#lv-clear').onclick = () => { $('#lv-log').innerHTML = '<p class="muted">Translations appear here, newest first.</p>'; count = 0; $('#lv-count').textContent = ''; };
+function updateShow(){
+  $('#show-big').textContent = lastLive ? lastLive.text : 'Nothing translated yet.';
+  $('#show-small').textContent = lastLive ? lastLive.orig : '';
+}
+$('#lv-show').onclick = () => { updateShow(); $('#show').classList.add('on'); };
+$('#show-close').onclick = () => $('#show').classList.remove('on');
+
+/* ===================== SETTINGS UI ===================== */
+function bindSettings(){
+  const rl = $('#st-reclang'), rc = $('#st-reclang-custom');
+  rl.value = settings.recLang; rc.value = settings.recLangCustom; rc.classList.toggle('hidden', settings.recLang !== 'custom');
+  rl.onchange = () => { settings.recLang = rl.value; rc.classList.toggle('hidden', rl.value !== 'custom'); saveSettings(); };
+  rc.onchange = () => { settings.recLangCustom = rc.value.trim(); saveSettings(); };
+  $('#st-srclang').value = settings.srcLang; $('#st-srclang').onchange = e => { settings.srcLang = e.target.value; saveSettings(); };
+  $('#st-engine').value = settings.engine; $('#st-engine').onchange = e => { settings.engine = e.target.value; cache.clear(); saveSettings(); };
+  $('#st-voice-en').onchange = e => { settings.voiceEn = e.target.value; saveSettings(); speak('This is how translations will sound.', 'en'); };
+  $('#st-voice-hil').onchange = e => { settings.voiceHil = e.target.value; saveSettings(); speak('Maayong aga, kamusta ka?', 'hil'); };
+  const rate = $('#st-rate'); rate.value = settings.rate; $('#st-rate-v').textContent = settings.rate + '×';
+  rate.oninput = () => { settings.rate = +rate.value; $('#st-rate-v').textContent = settings.rate + '×'; saveSettings(); };
+  $('#st-speak').checked = settings.speak; $('#st-speak').onchange = e => { settings.speak = e.target.checked; saveSettings(); };
+  $('#st-pause').checked = settings.pauseWhileSpeaking; $('#st-pause').onchange = e => { settings.pauseWhileSpeaking = e.target.checked; saveSettings(); };
+}
+bindSettings();
+renderLessons();
+renderPhrasebook();
+
+if('serviceWorker' in navigator && location.protocol === 'https:'){
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
